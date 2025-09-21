@@ -33,6 +33,7 @@ await setOtpForUser(user);
 
 
 res.status(201).json({
+  success: "true",
 message: 'Registered. OTP sent. Verify to continue.',
 userId: user._id
 });
