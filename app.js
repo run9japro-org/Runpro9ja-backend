@@ -55,7 +55,7 @@ app.use("/api/orders", orderRoutes);
 app.use("/api/delivery", deliveryRoutes);
 // app.use("/api/profile", profileRoutes);
 app.use("/api/payments", paymentRoutes);
-app.use("/api/withdrawals", withdrawalRoutes);
+// app.use("/api/withdrawals", withdrawalRoutes);
 app.use("/api/chat", chatRoutes);
 // app.use("/api/notifications", notificationRoutes);
 app.use("/api/admin", adminRoutes);
