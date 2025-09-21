@@ -1,5 +1,5 @@
 import { Withdrawal } from "../models/Withdrawal.js";
-import { WithdrawalService } from "../services/WithdrawalService.js";
+import { WithdrawalService } from "../services/withdrawalService.js";
 import { User } from "../models/User.js";
 
 // ✅ Request Withdrawal
