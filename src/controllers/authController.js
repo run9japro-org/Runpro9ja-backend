@@ -90,9 +90,12 @@ await user.save();
 
 
 const token = issueToken({ id: user._id, role: user.role, name: user.fullName });
-res.json({ message: 'Verification successful', token });
+res.json({
+  success:true, message: 'Verification successful', token });
 } catch (e) { next(e); }
 };
+
+
 export const resendOtp = async (req, res, next) => {
 try {
 const { userId } = req.body;
