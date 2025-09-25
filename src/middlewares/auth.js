@@ -3,9 +3,17 @@ import { env } from '../config/env.js';
 import { ADMIN_ROLES } from '../constants/roles.js';
 
 
-export const issueToken = (payload) =>
-jwt.sign(payload, env.jwtSecret, { expiresIn: env.jwtExpires });
+export const issueToken = (payload) => {
+  if (!env.jwtSecret) {
+    throw new Error("JWT secret is not defined in env");
+  }
 
+  return jwt.sign(
+    payload,                  // e.g. { id, role }
+    env.jwtSecret,            // secret from your env
+    { expiresIn: env.jwtExpires || "1d" } // default to 1 day if not set
+  );
+};
 
 export const authGuard = (req, res, next) => {
 const header = req.headers.authorization || '';
