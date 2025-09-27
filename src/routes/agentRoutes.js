@@ -4,7 +4,9 @@ createOrUpdateProfile,
 getMyProfile,
 getAgentProfile,
 assignServiceToAgent,
-unassignServiceFromAgent
+unassignServiceFromAgent,
+uploadimage,
+upload
 } from '../controllers/agentController.js';
 import { authGuard, requireRoles } from '../middlewares/auth.js';
 import { ROLES } from '../constants/roles.js';
@@ -16,6 +18,7 @@ const router = Router();
 // Agent creates/updates their profile
 router.post('/me', authGuard, requireRoles(ROLES.AGENT), createOrUpdateProfile);
 router.get('/me', authGuard, requireRoles(ROLES.AGENT), getMyProfile);
+router.post("/upload-profile", authGuard, upload.single("profileImage"),uploadimage);
 
 
 // Public: get agent profile by user id

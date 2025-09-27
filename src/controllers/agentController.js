@@ -28,9 +28,10 @@ const storage = multer.diskStorage({
   },
 });
 
-const upload = multer({ storage });
+export const upload = multer({ storage });
 
-app.post("/upload-profile", authGuard, upload.single("profileImage"), async (req, res) => {
+
+export const uploadimage = async (req, res) => {
   try {
     const user = await User.findByIdAndUpdate(
       req.user.id,
@@ -41,7 +42,7 @@ app.post("/upload-profile", authGuard, upload.single("profileImage"), async (req
   } catch (err) {
     res.status(500).json({ message: "Upload failed", error: err.message });
   }
-});
+};
 
 
 
