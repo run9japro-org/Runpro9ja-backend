@@ -1,7 +1,8 @@
 import { AgentProfile } from '../models/AgentProfile.js';
 import { ServiceCategory } from '../models/ServiceCategory.js';
 import { User } from '../models/User.js';
-
+import multer from "multer";
+import path from "path";
 
 export const createOrUpdateProfile = async (req, res, next) => {
 try {
@@ -17,6 +18,31 @@ await profile.save();
 res.json(profile);
 } catch (e) { next(e); }
 };
+
+
+
+const storage = multer.diskStorage({
+  destination: "./uploads/",
+  filename: (req, file, cb) => {
+    cb(null, Date.now() + path.extname(file.originalname));
+  },
+});
+
+const upload = multer({ storage });
+
+app.post("/upload-profile", authGuard, upload.single("profileImage"), async (req, res) => {
+  try {
+    const user = await User.findByIdAndUpdate(
+      req.user.id,
+      { profileImage: `/uploads/${req.file.filename}` },
+      { new: true }
+    );
+    res.json({ message: "Profile image uploaded", user });
+  } catch (err) {
+    res.status(500).json({ message: "Upload failed", error: err.message });
+  }
+});
+
 
 
 export const getMyProfile = async (req, res, next) => {
