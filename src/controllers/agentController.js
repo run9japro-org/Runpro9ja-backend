@@ -5,18 +5,29 @@ import multer from "multer";
 import path from "path";
 
 export const createOrUpdateProfile = async (req, res, next) => {
-try {
-const userId = req.user.id;
-const payload = req.body;
-let profile = await AgentProfile.findOne({ user: userId });
-if (!profile) {
-profile = await AgentProfile.create({ user: userId, ...payload });
-} else {
-Object.assign(profile, payload);
-await profile.save();
-}
-res.json(profile);
-} catch (e) { next(e); }
+  try {
+    const userId = req.user.id;
+    const payload = req.body;
+
+    // ✅ Try to find existing profile
+    let profile = await AgentProfile.findOne({ user: userId });
+
+    if (!profile) {
+      // ✅ Create a new profile linked to the user
+      profile = await AgentProfile.create({ user: userId, ...payload });
+    } else {
+      // ✅ Update existing profile with new fields
+      Object.assign(profile, payload);
+      await profile.save();
+    }
+
+    // ✅ Populate services so agent sees full info
+    const populatedProfile = await profile.populate("services");
+
+    res.json(populatedProfile);
+  } catch (e) {
+    next(e);
+  }
 };
 
 
