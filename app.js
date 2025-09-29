@@ -30,12 +30,16 @@ const server = http.createServer(app);
 // Init Socket.io
 initSocket(server);
 
+// ✅ Trust Render / proxy
+app.set("trust proxy", 1);
 // Security & utils
 app.use(helmet());
 app.use(
   rateLimit({
-    windowMs: 15 * 60 * 1000,
-    max: 100,
+    windowMs: 15 * 60 * 1000, // 15 minutes
+    max: 100, // limit each IP
+  standardHeaders: true, 
+  legacyHeaders: false,
   })
 );
 app.use(express.json({ limit: "1mb" }));
