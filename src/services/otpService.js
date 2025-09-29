@@ -10,7 +10,7 @@ auth: { user: env.smtp.user, pass: env.smtp.pass }
 
 export const sendEmailOtp = async ({ to, name, code }) => {
 const info = await transporter.sendMail({
-from: env.smtp.from,
+from: env.smtp.user,
 to,
 subject: 'Your Verification Code',
 html: `
