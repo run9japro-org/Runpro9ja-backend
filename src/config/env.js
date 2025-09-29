@@ -11,7 +11,7 @@ jwtSecret: process.env.JWT_SECRET,
 jwtExpires: process.env.JWT_EXPIRES || '7d',
 smtp: {
 host: process.env.SMTP_HOST,
-port: Number(process.env.SMTP_PORT || 465),
+port: Number(process.env.SMTP_PORT || 587),
 secure: String(process.env.SMTP_SECURE || 'true') === 'true',
 user: process.env.SMTP_USER,
 pass: process.env.SMTP_PASS,
