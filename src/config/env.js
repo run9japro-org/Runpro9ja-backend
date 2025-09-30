@@ -16,5 +16,10 @@ secure: String(process.env.SMTP_SECURE || 'true') === 'true',
 user: process.env.SMTP_USER,
 pass: process.env.SMTP_PASS,
 from: process.env.FROM_EMAIL || 'no-reply@example.com'
-}
+},
+twilio: {
+    accountSid: process.env.TWILIO_ACCOUNT_SID,
+    authToken: process.env.TWILIO_AUTH_TOKEN,
+    phoneNumber: process.env.TWILIO_PHONE_NUMBER
+  }
 };

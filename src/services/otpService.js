@@ -58,8 +58,20 @@ export const sendEmailOtp = async ({ to, name, code }) => {
 };
 
 // Placeholder: SMS via Twilio (to be added later)
+// --- SMS ---
+const twilioClient = twilio(env.twilio.accountSid, env.twilio.authToken);
+
 export const sendSmsOtp = async ({ to, code }) => {
-  // integrate Twilio/other SMS provider later
-  console.log(`(DEV) SMS to ${to}: ${code}`);
-  return true;
+  try {
+    const message = await twilioClient.messages.create({
+      body: `Your RunPro9ja verification code is: ${code}`,
+      from: env.twilio.phoneNumber, // must be your Twilio number
+      to: to.startsWith('+') ? to : `+234${to.replace(/^0/, '')}` // normalize Nigerian numbers
+    });
+    console.log('SMS sent:', message.sid);
+    return true;
+  } catch (err) {
+    console.error('SMS sending failed:', err.message);
+    return false;
+  }
 };
