@@ -9,26 +9,26 @@ export const createOrUpdateProfile = async (req, res, next) => {
     const userId = req.user.id;
     const payload = req.body;
 
-    // ✅ Try to find existing profile
+    if (payload.services && !Array.isArray(payload.services)) {
+      return res.status(400).json({ message: "Services must be an array" });
+    }
+
     let profile = await AgentProfile.findOne({ user: userId });
 
     if (!profile) {
-      // ✅ Create a new profile linked to the user
       profile = await AgentProfile.create({ user: userId, ...payload });
     } else {
-      // ✅ Update existing profile with new fields
       Object.assign(profile, payload);
       await profile.save();
     }
 
-    // ✅ Populate services so agent sees full info
-    const populatedProfile = await profile.populate("services");
-
+    const populatedProfile = await profile.populate("user services", "fullName email phone");
     res.json(populatedProfile);
   } catch (e) {
     next(e);
   }
 };
+
 
 
 
@@ -41,15 +41,15 @@ const storage = multer.diskStorage({
 
 export const upload = multer({ storage });
 
-
 export const uploadimage = async (req, res) => {
   try {
-    const user = await User.findByIdAndUpdate(
-      req.user.id,
+    const profile = await AgentProfile.findOneAndUpdate(
+      { user: req.user.id },
       { profileImage: `/uploads/${req.file.filename}` },
-      { new: true }
-    );
-    res.json({ message: "Profile image uploaded", user });
+      { new: true, upsert: true }
+    ).populate("user services", "fullName email phone"); // ✅ return with user info
+
+    res.json({ message: "Profile image uploaded", profile });
   } catch (err) {
     res.status(500).json({ message: "Upload failed", error: err.message });
   }
