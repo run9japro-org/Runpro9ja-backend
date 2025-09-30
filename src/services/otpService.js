@@ -1,5 +1,6 @@
 import nodemailer from 'nodemailer';
 import { env } from '../config/env.js';
+import twilio from 'twilio';
 
 const transporter = nodemailer.createTransport({
   host: 'smtp.gmail.com',
