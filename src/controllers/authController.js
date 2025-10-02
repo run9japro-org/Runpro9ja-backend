@@ -1,67 +1,234 @@
 import { User } from '../models/User.js';
 import { generateNumericOtp } from '../utils/generateOtp.js';
-import { sendSmsOtp } from '../services/otpService.js';
+import { sendOtpBothChannels, sendSmsOtp, sendEmailOtp } from '../services/otpService.js';
 import { issueToken } from '../middlewares/auth.js';
 
 const OTP_TTL_MINUTES = 10;
 
-// Generate and send OTP via SMS only
+// Generate and send OTP via both SMS and Email
 const setOtpForUser = async (user) => {
-  const code = generateNumericOtp(6);
-  user.otpCode = code; // For production, store hashed. MVP keeps plain.
-  user.otpExpiresAt = new Date(Date.now() + OTP_TTL_MINUTES * 60 * 1000);
-  await user.save();
+  try {
+    const code = generateNumericOtp(6);
+    user.otpCode = code;
+    user.otpExpiresAt = new Date(Date.now() + OTP_TTL_MINUTES * 60 * 1000);
+    await user.save();
 
-  if (user.phone) {
-    await sendSmsOtp({ to: user.phone, code });
+    // Send OTP through both channels
+    const otpResults = await sendOtpBothChannels({
+      to: user.email,
+      name: user.fullName,
+      code: code,
+      phone: user.phone
+    });
+
+    return otpResults;
+  } catch (error) {
+    console.error('Error in setOtpForUser:', error.message);
+    throw error;
   }
 };
 
 export const register = async (req, res, next) => {
   try {
     const { role, fullName, email, location, dob, phone, password } = req.body;
-    if (!role || !fullName || !password || !location || !dob || !phone) {
-      return res.status(400).json({ message: "Missing required fields" });
+    
+    if (!role || !fullName || !password || !location || !dob || !phone || !email) {
+      return res.status(400).json({ 
+        success: false,
+        message: "All required fields must be provided" 
+      });
     }
 
     const existing = await User.findOne({ $or: [{ email }, { phone }] });
-    if (existing) return res.status(409).json({ message: 'User already exists' });
+    if (existing) {
+      return res.status(409).json({ 
+        success: false,
+        message: 'User with this email or phone already exists' 
+      });
+    }
 
     const user = await User.create({ role, fullName, email, phone, password, location, dob });
-    await setOtpForUser(user);
+    
+    try {
+      const otpResults = await setOtpForUser(user);
+      
+      let message = 'Registered successfully. ';
+      
+      if (otpResults.allSuccessful) {
+        message += 'OTP sent via both SMS and email.';
+      } else if (otpResults.partialSuccess) {
+        if (otpResults.email.success && !otpResults.sms.success) {
+          message += 'OTP sent via email. SMS delivery failed.';
+        } else if (otpResults.sms.success && !otpResults.email.success) {
+          message += 'OTP sent via SMS. Email delivery failed.';
+        }
+      } else {
+        message += 'OTP delivery failed for both channels. Please try resending OTP.';
+      }
 
-    res.status(201).json({
-      success: true,
-      message: 'Registered. OTP sent via SMS. Verify to continue.',
-      userId: user._id
-    });
-  } catch (e) { next(e); }
+      res.status(201).json({
+        success: true,
+        message: message,
+        userId: user._id,
+        otpDelivery: {
+          email: otpResults.email.success,
+          sms: otpResults.sms.success
+        }
+      });
+    } catch (otpError) {
+      console.error('OTP delivery failed:', otpError.message);
+      res.status(201).json({
+        success: true,
+        message: 'Registered successfully, but OTP delivery failed. Please try logging in to resend OTP.',
+        userId: user._id,
+        warning: 'OTP_DELIVERY_FAILED'
+      });
+    }
+    
+  } catch (error) {
+    console.error('Registration error:', error.message);
+    next(error);
+  }
 };
 
 export const login = async (req, res, next) => {
   try {
-    const { identifier, password } = req.body; // identifier = email or phone
-    if (!identifier || !password) return res.status(400).json({ message: 'Missing credentials' });
-
-    const user = await User.findOne({ $or: [{ email: identifier }, { phone: identifier }] }).select('+password');
-    if (!user) return res.status(404).json({ message: 'User not found' });
-
-    const ok = await user.comparePassword(password);
-    if (!ok) return res.status(401).json({ message: 'Invalid credentials' });
-
-    if (!user.isVerified) {
-      await setOtpForUser(user);
-      return res.status(403).json({
-        message: 'Account not verified. OTP re-sent via SMS.',
-        needsVerification: true,
-        userId: user._id
+    const { identifier, password } = req.body;
+    
+    if (!identifier || !password) {
+      return res.status(400).json({ 
+        success: false,
+        message: 'Email/phone and password are required' 
       });
     }
 
-    const token = issueToken({ id: user._id, role: user.role, name: user.fullName });
-    res.json({ message: 'Login successful', token });
-  } catch (e) { next(e); }
+    const user = await User.findOne({ 
+      $or: [{ email: identifier }, { phone: identifier }] 
+    }).select('+password');
+    
+    if (!user) {
+      return res.status(404).json({ 
+        success: false,
+        message: 'User not found' 
+      });
+    }
+
+    const isPasswordValid = await user.comparePassword(password);
+    if (!isPasswordValid) {
+      return res.status(401).json({ 
+        success: false,
+        message: 'Invalid credentials' 
+      });
+    }
+
+    if (!user.isVerified) {
+      try {
+        const otpResults = await setOtpForUser(user);
+        
+        let message = 'Account not verified. ';
+        
+        if (otpResults.allSuccessful) {
+          message += 'OTP re-sent via both SMS and email.';
+        } else if (otpResults.partialSuccess) {
+          if (otpResults.email.success && !otpResults.sms.success) {
+            message += 'OTP re-sent via email. SMS delivery failed.';
+          } else if (otpResults.sms.success && !otpResults.email.success) {
+            message += 'OTP re-sent via SMS. Email delivery failed.';
+          }
+        } else {
+          message += 'OTP delivery failed. Please try resending.';
+        }
+
+        return res.status(403).json({
+          success: false,
+          message: message,
+          needsVerification: true,
+          userId: user._id,
+          otpDelivery: {
+            email: otpResults.email.success,
+            sms: otpResults.sms.success
+          }
+        });
+      } catch (otpError) {
+        console.error('OTP resend failed during login:', otpError.message);
+        return res.status(403).json({
+          success: false,
+          message: 'Account not verified. Please try resending OTP.',
+          needsVerification: true,
+          userId: user._id,
+          warning: 'OTP_SEND_FAILED'
+        });
+      }
+    }
+
+    const token = issueToken({ 
+      id: user._id, 
+      role: user.role, 
+      name: user.fullName 
+    });
+    
+    res.json({
+      success: true,
+      message: 'Login successful',
+      token,
+      user: {
+        id: user._id,
+        role: user.role,
+        name: user.fullName,
+        email: user.email,
+        phone: user.phone
+      }
+    });
+    
+  } catch (error) {
+    console.error('Login error:', error.message);
+    next(error);
+  }
 };
+
+export const resendOtp = async (req, res, next) => {
+  try {
+    const { userId } = req.body;
+    const user = await User.findById(userId);
+    
+    if (!user) {
+      return res.status(404).json({ 
+        success: false,
+        message: 'User not found' 
+      });
+    }
+
+    const otpResults = await setOtpForUser(user);
+    
+    let message = '';
+    
+    if (otpResults.allSuccessful) {
+      message = 'OTP re-sent via both SMS and email.';
+    } else if (otpResults.partialSuccess) {
+      if (otpResults.email.success && !otpResults.sms.success) {
+        message = 'OTP re-sent via email. SMS delivery failed.';
+      } else if (otpResults.sms.success && !otpResults.email.success) {
+        message = 'OTP re-sent via SMS. Email delivery failed.';
+      }
+    } else {
+      message = 'OTP delivery failed for both channels. Please try again.';
+    }
+
+    res.json({
+      success: otpResults.partialSuccess || otpResults.allSuccessful,
+      message: message,
+      otpDelivery: {
+        email: otpResults.email.success,
+        sms: otpResults.sms.success
+      }
+    });
+  } catch (e) {
+    console.error('Resend OTP error:', e.message);
+    next(e);
+  }
+};
+
+// ... keep your existing verifyOtp, me, getMyProfile, etc. functions
 
 export const verifyOtp = async (req, res, next) => {
   try {
@@ -88,16 +255,6 @@ export const verifyOtp = async (req, res, next) => {
       message: 'Verification successful',
       token
     });
-  } catch (e) { next(e); }
-};
-
-export const resendOtp = async (req, res, next) => {
-  try {
-    const { userId } = req.body;
-    const user = await User.findById(userId);
-    if (!user) return res.status(404).json({ message: 'User not found' });
-    await setOtpForUser(user);
-    res.json({ message: 'OTP re-sent via SMS' });
   } catch (e) { next(e); }
 };
 
