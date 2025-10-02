@@ -7,7 +7,7 @@ import rateLimit from "express-rate-limit";
 
 import { env } from "./src/config/env.js";
 import { errorHandler, notFound } from "./src/middlewares/errorHandler.js";
-
+import path from "path"; // ✅ ADD THIS IMPORT
 // ✅ Routes
 import authRoutes from "./src/routes/authRoutes.js";
 import serviceRoutes from "./src/routes/serviceRoutes.js";
@@ -57,6 +57,8 @@ app.use("/api/services", serviceRoutes);
 app.use("/api/agents", agentRoutes);
 app.use("/api/orders", orderRoutes);
 app.use("/api/delivery", deliveryRoutes);
+// ✅ ADD THIS LINE - Serve static files from uploads directory
+app.use("/uploads", express.static(path.join(process.cwd(), "uploads")));
 // app.use("/api/profile", profileRoutes);
 app.use("/api/payments", paymentRoutes);
 // app.use("/api/withdrawals", withdrawalRoutes);
