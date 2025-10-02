@@ -9,6 +9,7 @@ export const createOrUpdateProfile = async (req, res, next) => {
     const userId = req.user.id;
     const payload = req.body;
 
+    // ✅ Optional: Add validation for services array if needed
     if (payload.services && !Array.isArray(payload.services)) {
       return res.status(400).json({ message: "Services must be an array" });
     }
