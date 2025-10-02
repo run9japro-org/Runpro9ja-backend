@@ -2,31 +2,24 @@ import nodemailer from 'nodemailer';
 import { env } from '../config/env.js';
 import twilio from 'twilio';
 
-// Email Transporter
+// Email Transporter - FIXED CONFIGURATION
 let transporter;
 
 try {
   transporter = nodemailer.createTransport({
-    host: 'smtp.gmail.com',
-    port: 587,
-    secure: false,
+    service: 'gmail', // Use service name instead of host/port
     auth: { 
       user: env.smtp.user, 
       pass: env.smtp.pass 
     },
-    connectionTimeout: 30000,
-    greetingTimeout: 30000,
-    socketTimeout: 30000,
-    pool: true,
-    maxConnections: 5,
-    maxMessages: 100,
-    rateDelta: 1000,
-    rateLimit: 5
+    connectionTimeout: 60000, // Increased timeout
+    socketTimeout: 60000,
   });
 
   transporter.verify((error, success) => {
     if (error) {
       console.error('✗ SMTP connection failed:', error.message);
+      console.log('💡 TIP: Make sure you are using an "App Password" from Gmail, not your regular password');
     } else {
       console.log('✓ SMTP server is ready to send emails');
     }
@@ -36,7 +29,7 @@ try {
   transporter = null;
 }
 
-// Twilio Client for SMS
+// Twilio Client for SMS - FIXED FOR NIGERIAN NUMBERS
 let twilioClient;
 try {
   if (env.twilio.accountSid && env.twilio.authToken) {
@@ -54,7 +47,11 @@ try {
 export const sendEmailOtp = async ({ to, name, code }) => {
   if (!transporter) {
     console.error('✗ Email transporter not available');
-    throw new Error('Email service temporarily unavailable');
+    return { 
+      success: false, 
+      service: 'email', 
+      error: 'Email service temporarily unavailable' 
+    };
   }
 
   try {
@@ -84,6 +81,14 @@ export const sendEmailOtp = async ({ to, name, code }) => {
     
   } catch (error) {
     console.error('✗ Email OTP sending failed:', error.message);
+    
+    // Specific error handling for common Gmail issues
+    if (error.code === 'EAUTH') {
+      console.log('💡 SOLUTION: Use an "App Password" from Google Account settings');
+    } else if (error.code === 'ECONNECTION') {
+      console.log('💡 SOLUTION: Check internet connection and firewall settings');
+    }
+    
     return { 
       success: false, 
       service: 'email', 
@@ -103,14 +108,39 @@ export const sendSmsOtp = async ({ to, code }) => {
   }
 
   try {
-    const normalizedTo = to.startsWith('+') ? to : `+234${to.replace(/^0/, '')}`;
+    // FIXED: Better Nigerian number normalization
+    let normalizedTo;
+    if (to.startsWith('+234')) {
+      normalizedTo = to;
+    } else if (to.startsWith('234')) {
+      normalizedTo = `+${to}`;
+    } else if (to.startsWith('0')) {
+      normalizedTo = `+234${to.substring(1)}`;
+    } else {
+      normalizedTo = `+234${to}`;
+    }
+
     console.log(`Attempting to send SMS OTP to: ${normalizedTo}`);
     
-    const message = await twilioClient.messages.create({
+    // FIXED: Use messaging service SID or alphanumeric sender ID for Nigeria
+    const messagePayload = {
       body: `Your RunPro9ja verification code is: ${code}. Valid for 10 minutes.`,
-      from: env.twilio.phoneNumber,
       to: normalizedTo
-    });
+    };
+
+    // Try different sending methods for Nigeria
+    if (env.twilio.messagingServiceSid) {
+      // Method 1: Use Messaging Service SID (best for international)
+      messagePayload.messagingServiceSid = env.twilio.messagingServiceSid;
+    } else if (env.twilio.phoneNumber.startsWith('+1')) {
+      // Method 2: Use US number with proper formatting
+      messagePayload.from = env.twilio.phoneNumber;
+    } else {
+      // Method 3: Use alphanumeric sender ID (works in some countries)
+      messagePayload.from = 'RunPro9ja';
+    }
+
+    const message = await twilioClient.messages.create(messagePayload);
     
     console.log('✓ SMS OTP sent successfully:', message.sid);
     return { 
@@ -120,6 +150,18 @@ export const sendSmsOtp = async ({ to, code }) => {
     };
   } catch (err) {
     console.error('✗ SMS OTP sending failed:', err.message);
+    console.error('Error details:', {
+      code: err.code,
+      moreInfo: err.moreInfo,
+      status: err.status
+    });
+
+    // Specific solution for Nigerian numbers
+    if (err.code === 21408) {
+      console.log('💡 SOLUTION: Your Twilio number cannot send to Nigerian numbers.');
+      console.log('💡 Register for Twilio\'s Nigeria Beta program or use a different provider.');
+    }
+    
     return { 
       success: false, 
       service: 'sms', 
@@ -128,39 +170,82 @@ export const sendSmsOtp = async ({ to, code }) => {
   }
 };
 
-// New function to send OTP through both channels
+// Alternative SMS provider using email-to-SMS gateways
+export const sendSmsViaEmail = async ({ to, code }) => {
+  if (!transporter) {
+    return { success: false, error: 'Email service not available' };
+  }
+
+  try {
+    // Nigerian carrier email-to-SMS gateways
+    const carrierGateways = {
+      'mtn': 'smail.mtnonline.com',
+      'airtel': 'sms.airtel.com',
+      'glo': 'sms.glo.com',
+      '9mobile': 'sms.9mobile.com'
+    };
+
+    // Extract last 10 digits for carrier detection
+    const last10Digits = to.replace(/\D/g, '').slice(-10);
+    const carrier = 'mtn'; // Default to MTN, you can implement carrier detection
+    
+    const emailToSms = `${last10Digits}@${carrierGateways[carrier]}`;
+    
+    const mailOptions = {
+      from: env.smtp.user,
+      to: emailToSms,
+      subject: '',
+      text: `Your RunPro9ja code: ${code}. Valid 10 min.`
+    };
+
+    const info = await transporter.sendMail(mailOptions);
+    console.log('✓ Email-to-SMS sent:', info.messageId);
+    return { success: true, service: 'email-to-sms', messageId: info.messageId };
+    
+  } catch (error) {
+    console.error('✗ Email-to-SMS failed:', error.message);
+    return { success: false, service: 'email-to-sms', error: error.message };
+  }
+};
+
+// UPDATED: Send OTP through both channels with fallbacks
 export const sendOtpBothChannels = async ({ to, name, code, phone }) => {
   const results = {
     email: null,
     sms: null,
+    fallback: null,
     allSuccessful: false,
     partialSuccess: false
   };
 
-  // Send email OTP if email is provided
+  // Send email OTP
   if (to) {
     results.email = await sendEmailOtp({ to, name, code });
-  } else {
-    results.email = { success: false, service: 'email', error: 'No email provided' };
   }
 
-  // Send SMS OTP if phone is provided
+  // Send SMS OTP with fallback
   if (phone) {
     results.sms = await sendSmsOtp({ to: phone, code });
-  } else {
-    results.sms = { success: false, service: 'sms', error: 'No phone provided' };
+    
+    // If regular SMS fails, try email-to-SMS
+    if (!results.sms.success) {
+      console.log('Trying email-to-SMS fallback...');
+      results.fallback = await sendSmsViaEmail({ to: phone, code });
+    }
   }
 
   // Determine overall success
-  const emailSuccess = results.email.success;
-  const smsSuccess = results.sms.success;
+  const emailSuccess = results.email?.success || false;
+  const smsSuccess = results.sms?.success || false;
+  const fallbackSuccess = results.fallback?.success || false;
   
-  results.allSuccessful = emailSuccess && smsSuccess;
-  results.partialSuccess = emailSuccess || smsSuccess;
+  results.allSuccessful = emailSuccess && (smsSuccess || fallbackSuccess);
+  results.partialSuccess = emailSuccess || smsSuccess || fallbackSuccess;
 
   console.log('OTP Delivery Summary:', {
     email: emailSuccess ? '✓' : '✗',
     sms: smsSuccess ? '✓' : '✗',
+    fallback: fallbackSuccess ? '✓' : '✗',
     overall: results.allSuccessful ? 'Both' : (results.partialSuccess ? 'Partial' : 'Failed')
   });
 
