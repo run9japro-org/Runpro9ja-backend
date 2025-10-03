@@ -20,7 +20,7 @@ import chatRoutes from "./src/routes/chatRoutes.js";
 // import notificationRoutes from "./src/routes/notificationRoutes.js";
 import adminRoutes from "./src/routes/adminRoutes.js";
 
-import customerRoutes from './routes/customerRoutes.js';
+import customerRoutes from './src/routes/customerRoutes.js';
 // ✅ Socket.io
 import { initSocket } from "./src/socket.js";
 
