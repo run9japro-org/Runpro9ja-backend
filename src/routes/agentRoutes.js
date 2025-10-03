@@ -21,6 +21,8 @@ router.get('/me', authGuard, requireRoles(ROLES.AGENT), getMyProfile);
 router.post("/upload-profile", authGuard, upload.single("profileImage"),uploadimage);
 
 
+// ✅ NEW: Customers can see available agents (no auth required or use customer auth)
+router.get('/available', getAgentProfile);
 // Public: get agent profile by user id
 router.get('/:userId', getAgentProfile);
 

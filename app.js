@@ -14,7 +14,6 @@ import serviceRoutes from "./src/routes/serviceRoutes.js";
 import agentRoutes from "./src/routes/agentRoutes.js";
 import orderRoutes from "./src/routes/orderRoutes.js";
 import deliveryRoutes from "./src/routes/deliveryRoutes.js";
-// import profileRoutes from "./src/routes/profileRoutes.js";
 import paymentRoutes from "./src/routes/paymentRoutes.js";
 import withdrawalRoutes from "./src/routes/withdrawalRoutes.js";
 import chatRoutes from "./src/routes/chatRoutes.js";
