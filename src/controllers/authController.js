@@ -260,7 +260,7 @@ export const verifyOtp = async (req, res, next) => {
 
 export const me = async (req, res, next) => {
   try {
-    res.json({ id: req.user.id, role: req.user.role, name: req.user.name });
+    res.json({ id: req.user.id, role: req.user.role, name: req.user.name,email: req.user.email});
   } catch (e) { next(e); }
 };
 
