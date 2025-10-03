@@ -20,6 +20,7 @@ import chatRoutes from "./src/routes/chatRoutes.js";
 // import notificationRoutes from "./src/routes/notificationRoutes.js";
 import adminRoutes from "./src/routes/adminRoutes.js";
 
+import customerRoutes from './routes/customerRoutes.js';
 // ✅ Socket.io
 import { initSocket } from "./src/socket.js";
 
@@ -56,6 +57,7 @@ app.use("/api/services", serviceRoutes);
 app.use("/api/agents", agentRoutes);
 app.use("/api/orders", orderRoutes);
 app.use("/api/delivery", deliveryRoutes);
+app.use('/api/customers', customerRoutes); 
 // ✅ ADD THIS LINE - Serve static files from uploads directory
 app.use("/uploads", express.static(path.join(process.cwd(), "uploads")));
 // app.use("/api/profile", profileRoutes);
