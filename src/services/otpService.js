@@ -13,12 +13,19 @@ try {
   }
 
   transporter = nodemailer.createTransport({
-    service: "gmail",
-    auth: {
-      user: env.smtp.user,
-      pass: env.smtp.pass
-    }
-  });
+  host: "smtp.gmail.com",
+  port: 465,
+  secure: true, // ✅ SSL required for port 465
+  auth: {
+    user: env.smtp.user,
+    pass: env.smtp.pass
+  },
+  logger: true,  // ✅ show connection logs
+  debug: true,   // ✅ print SMTP communication
+  connectionTimeout: 60000,
+  greetingTimeout: 30000,
+  socketTimeout: 60000
+});
 
   await transporter.verify();
   console.log("✅ Gmail transporter ready!");
