@@ -1,254 +1,223 @@
 import nodemailer from 'nodemailer';
 import { env } from '../config/env.js';
-import twilio from 'twilio';
 
-// Email Transporter - FIXED CONFIGURATION
-let transporter;
+// Simple console logger for debugging
+const logger = {
+  info: (message, data = null) => {
+    console.log(`ℹ️ ${message}`, data ? JSON.stringify(data, null, 2) : '');
+  },
+  error: (message, error = null) => {
+    console.error(`❌ ${message}`, error ? error.message : '');
+  },
+  success: (message, data = null) => {
+    console.log(`✅ ${message}`, data ? JSON.stringify(data, null, 2) : '');
+  }
+};
+
+// SIMPLE Email Transporter - Debug Version
+let transporter = null;
 
 try {
-  transporter = nodemailer.createTransport({
-    service: 'gmail', // Use service name instead of host/port
-    auth: { 
-      user: env.smtp.user, 
-      pass: env.smtp.pass 
-    },
-    connectionTimeout: 60000, // Increased timeout
-    socketTimeout: 60000,
-  });
+  logger.info('Initializing email transporter...');
+  
+  // Test if SMTP credentials exist
+  if (!env.smtp?.user || !env.smtp?.pass) {
+    logger.error('SMTP credentials missing in environment variables');
+    logger.info('Required: SMTP_USER and SMTP_PASS');
+  } else {
+    logger.info('SMTP credentials found', {
+      user: `${env.smtp.user.substring(0, 3)}...`,
+      hasPass: !!env.smtp.pass
+    });
 
-  transporter.verify((error, success) => {
-    if (error) {
-      console.error('✗ SMTP connection failed:', error.message);
-      console.log('💡 TIP: Make sure you are using an "App Password" from Gmail, not your regular password');
-    } else {
-      console.log('✓ SMTP server is ready to send emails');
-    }
-  });
+    transporter = nodemailer.createTransport({
+      service: 'gmail',
+      auth: {
+        user: env.smtp.user,
+        pass: env.smtp.pass
+      }
+    });
+
+    // Test connection
+    await transporter.verify();
+    logger.success('Email transporter initialized successfully');
+  }
 } catch (error) {
-  console.error('✗ Failed to create email transporter:', error.message);
+  logger.error('Failed to initialize email transporter', error);
   transporter = null;
 }
 
-// Twilio Client for SMS - FIXED FOR NIGERIAN NUMBERS
-let twilioClient;
-try {
-  if (env.twilio.accountSid && env.twilio.authToken) {
-    twilioClient = twilio(env.twilio.accountSid, env.twilio.authToken);
-    console.log('✓ Twilio client initialized');
-  } else {
-    console.warn('⚠ Twilio credentials not found - SMS will be disabled');
-    twilioClient = null;
-  }
-} catch (error) {
-  console.error('✗ Twilio client initialization failed:', error.message);
-  twilioClient = null;
-}
-
+// SIMPLIFIED Email OTP Function
 export const sendEmailOtp = async ({ to, name, code }) => {
+  logger.info('Attempting to send email OTP', { to, name, codeLength: code.length });
+
   if (!transporter) {
-    console.error('✗ Email transporter not available');
+    logger.error('Email transporter not available');
     return {
       success: false,
       service: 'email',
-      error: 'Email service temporarily unavailable'
+      error: 'Email service not configured'
     };
   }
 
   try {
-    console.log(`Attempting to send email OTP to: ${to}`);
-
-    const message = `
+    const mailOptions = {
+      from: `"RunPro9ja" <${env.smtp.user}>`,
+      to: to,
+      subject: 'Your RunPro9ja Verification Code',
+      text: `
 Hi ${name || 'there'},
 
 Your RunPro9ja verification code is: ${code}
 
-This code expires in 10 minutes.
+This code will expire in 10 minutes.
 
 If you didn't request this code, please ignore this email.
 
-— RunPro9ja Team
-    `;
-
-    const mailOptions = {
-      from: `"RunPro9ja" <${env.smtp.user}>`,
-      to,
-      subject: 'Your RunPro9ja Verification Code',
-      text: message   // 👈 use text instead of html
+Best regards,
+RunPro9ja Team
+      `,
+      html: `
+<div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+  <h2 style="color: #2E7D32;">RunPro9ja Verification</h2>
+  <p>Hi ${name || 'there'},</p>
+  <p>Your verification code is:</p>
+  <div style="background: #f5f5f5; padding: 15px; text-align: center; font-size: 24px; font-weight: bold; letter-spacing: 5px; margin: 20px 0;">
+    ${code}
+  </div>
+  <p>This code will expire in 10 minutes.</p>
+  <p>If you didn't request this code, please ignore this email.</p>
+  <hr style="border: none; border-top: 1px solid #eee; margin: 20px 0;">
+  <p style="color: #666; font-size: 12px;">Best regards,<br>RunPro9ja Team</p>
+</div>
+      `
     };
 
-    const info = await transporter.sendMail(mailOptions);
-    console.log('✓ Email OTP sent successfully:', info.messageId);
-    return { success: true, service: 'email', messageId: info.messageId };
+    const result = await transporter.sendMail(mailOptions);
+    logger.success('Email OTP sent successfully', { 
+      messageId: result.messageId,
+      to: to
+    });
+
+    return {
+      success: true,
+      service: 'email',
+      messageId: result.messageId
+    };
 
   } catch (error) {
-    console.error('✗ Email OTP sending failed:', error.message);
-
+    logger.error('Failed to send email OTP', error);
+    
+    // Provide specific error messages
+    let userMessage = error.message;
+    
     if (error.code === 'EAUTH') {
-      console.log('💡 SOLUTION: Use an "App Password" from Google Account settings');
+      userMessage = 'Email authentication failed. Please check your SMTP credentials.';
+      logger.info('💡 TIP: Use an App Password from Google Account settings, not your regular password');
+    } else if (error.code === 'EENVELOPE') {
+      userMessage = 'Invalid email address.';
     } else if (error.code === 'ECONNECTION') {
-      console.log('💡 SOLUTION: Check internet connection and firewall settings');
+      userMessage = 'Cannot connect to email server. Check your internet connection.';
     }
 
     return {
       success: false,
       service: 'email',
-      error: error.message
+      error: userMessage,
+      debug: error.message
     };
   }
 };
 
-
+// SIMPLIFIED SMS OTP Function (Placeholder for now)
 export const sendSmsOtp = async ({ to, code }) => {
-  if (!twilioClient) {
-    console.error('✗ SMS service not available');
-    return { 
-      success: false, 
-      service: 'sms', 
-      error: 'SMS service not configured' 
-    };
-  }
-
-  try {
-    // FIXED: Better Nigerian number normalization
-    let normalizedTo;
-    if (to.startsWith('+234')) {
-      normalizedTo = to;
-    } else if (to.startsWith('234')) {
-      normalizedTo = `+${to}`;
-    } else if (to.startsWith('0')) {
-      normalizedTo = `+234${to.substring(1)}`;
-    } else {
-      normalizedTo = `+234${to}`;
-    }
-
-    console.log(`Attempting to send SMS OTP to: ${normalizedTo}`);
-    
-    // FIXED: Use messaging service SID or alphanumeric sender ID for Nigeria
-    const messagePayload = {
-      body: `Your RunPro9ja verification code is: ${code}. Valid for 10 minutes.`,
-      to: normalizedTo
-    };
-
-    // Try different sending methods for Nigeria
-    if (env.twilio.messagingServiceSid) {
-      // Method 1: Use Messaging Service SID (best for international)
-      messagePayload.messagingServiceSid = env.twilio.messagingServiceSid;
-    } else if (env.twilio.phoneNumber.startsWith('+1')) {
-      // Method 2: Use US number with proper formatting
-      messagePayload.from = env.twilio.phoneNumber;
-    } else {
-      // Method 3: Use alphanumeric sender ID (works in some countries)
-      messagePayload.from = 'RunPro9ja';
-    }
-
-    const message = await twilioClient.messages.create(messagePayload);
-    
-    console.log('✓ SMS OTP sent successfully:', message.sid);
-    return { 
-      success: true, 
-      service: 'sms', 
-      messageId: message.sid 
-    };
-  } catch (err) {
-    console.error('✗ SMS OTP sending failed:', err.message);
-    console.error('Error details:', {
-      code: err.code,
-      moreInfo: err.moreInfo,
-      status: err.status
-    });
-
-    // Specific solution for Nigerian numbers
-    if (err.code === 21408) {
-      console.log('💡 SOLUTION: Your Twilio number cannot send to Nigerian numbers.');
-      console.log('💡 Register for Twilio\'s Nigeria Beta program or use a different provider.');
-    }
-    
-    return { 
-      success: false, 
-      service: 'sms', 
-      error: err.message 
-    };
-  }
+  logger.info('SMS OTP requested but not configured', { to, code });
+  
+  return {
+    success: false,
+    service: 'sms',
+    error: 'SMS service not configured. Please check Twilio credentials.',
+    suggestion: 'Configure Twilio or use email-only for now'
+  };
 };
 
-// Alternative SMS provider using email-to-SMS gateways
-export const sendSmsViaEmail = async ({ to, code }) => {
-  if (!transporter) {
-    return { success: false, error: 'Email service not available' };
-  }
-
-  try {
-    // Nigerian carrier email-to-SMS gateways
-    const carrierGateways = {
-      'mtn': 'smail.mtnonline.com',
-      'airtel': 'sms.airtel.com',
-      'glo': 'sms.glo.com',
-      '9mobile': 'sms.9mobile.com'
-    };
-
-    // Extract last 10 digits for carrier detection
-    const last10Digits = to.replace(/\D/g, '').slice(-10);
-    const carrier = 'mtn'; // Default to MTN, you can implement carrier detection
-    
-    const emailToSms = `${last10Digits}@${carrierGateways[carrier]}`;
-    
-    const mailOptions = {
-      from: env.smtp.user,
-      to: emailToSms,
-      subject: '',
-      text: `Your RunPro9ja code: ${code}. Valid 10 min.`
-    };
-
-    const info = await transporter.sendMail(mailOptions);
-    console.log('✓ Email-to-SMS sent:', info.messageId);
-    return { success: true, service: 'email-to-sms', messageId: info.messageId };
-    
-  } catch (error) {
-    console.error('✗ Email-to-SMS failed:', error.message);
-    return { success: false, service: 'email-to-sms', error: error.message };
-  }
-};
-
-// UPDATED: Send OTP through both channels with fallbacks
+// SIMPLIFIED Combined OTP Function
 export const sendOtpBothChannels = async ({ to, name, code, phone }) => {
+  logger.info('Starting OTP delivery process', { 
+    hasEmail: !!to, 
+    hasPhone: !!phone,
+    code: code
+  });
+
   const results = {
     email: null,
     sms: null,
-    fallback: null,
     allSuccessful: false,
-    partialSuccess: false
+    partialSuccess: false,
+    message: ''
   };
 
-  // Send email OTP
+  // Try email first
   if (to) {
     results.email = await sendEmailOtp({ to, name, code });
+  } else {
+    logger.error('No email address provided for OTP');
   }
 
-  // Send SMS OTP with fallback
+  // Try SMS if phone provided
   if (phone) {
     results.sms = await sendSmsOtp({ to: phone, code });
-    
-    // If regular SMS fails, try email-to-SMS
-    if (!results.sms.success) {
-      console.log('Trying email-to-SMS fallback...');
-      results.fallback = await sendSmsViaEmail({ to: phone, code });
-    }
   }
 
-  // Determine overall success
+  // Determine results
   const emailSuccess = results.email?.success || false;
   const smsSuccess = results.sms?.success || false;
-  const fallbackSuccess = results.fallback?.success || false;
-  
-  results.allSuccessful = emailSuccess && (smsSuccess || fallbackSuccess);
-  results.partialSuccess = emailSuccess || smsSuccess || fallbackSuccess;
 
-  console.log('OTP Delivery Summary:', {
-    email: emailSuccess ? '✓' : '✗',
-    sms: smsSuccess ? '✓' : '✗',
-    fallback: fallbackSuccess ? '✓' : '✗',
-    overall: results.allSuccessful ? 'Both' : (results.partialSuccess ? 'Partial' : 'Failed')
-  });
+  results.allSuccessful = emailSuccess && smsSuccess;
+  results.partialSuccess = emailSuccess || smsSuccess;
+
+  if (results.allSuccessful) {
+    results.message = 'OTP sent via both email and SMS';
+    logger.success('OTP delivered via both channels');
+  } else if (results.partialSuccess) {
+    results.message = `OTP sent via ${emailSuccess ? 'email' : 'SMS'} only`;
+    logger.info('OTP partially delivered', { email: emailSuccess, sms: smsSuccess });
+  } else {
+    results.message = 'Failed to send OTP via any channel';
+    logger.error('OTP delivery failed completely');
+  }
 
   return results;
+};
+
+// Test function to verify configuration
+export const testEmailConfiguration = async () => {
+  logger.info('Testing email configuration...');
+  
+  if (!transporter) {
+    return {
+      success: false,
+      message: 'Email transporter not initialized. Check SMTP credentials.'
+    };
+  }
+
+  try {
+    await transporter.verify();
+    
+    // Try sending a test email
+    const testResult = await sendEmailOtp({
+      to: env.smtp.user, // Send to yourself
+      name: 'Test User',
+      code: '123456'
+    });
+
+    return testResult;
+
+  } catch (error) {
+    logger.error('Email configuration test failed', error);
+    return {
+      success: false,
+      message: error.message
+    };
+  }
 };
