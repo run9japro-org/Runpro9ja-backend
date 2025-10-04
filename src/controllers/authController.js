@@ -32,25 +32,51 @@ export const register = async (req, res, next) => {
   try {
     const { role, fullName, email, location, dob, phone, password } = req.body;
     
+    console.log('🔍 Registration attempt:', { 
+      email: email, 
+      phone: phone, 
+      fullName: fullName 
+    });
+
     if (!role || !fullName || !password || !location || !dob || !phone || !email) {
+      console.log('❌ Missing required fields');
       return res.status(400).json({ 
         success: false,
         message: "All required fields must be provided" 
       });
     }
 
+    console.log('🔎 Checking for existing user...');
     const existing = await User.findOne({ $or: [{ email }, { phone }] });
+    
     if (existing) {
+      console.log('❌ User already exists:', {
+        existingEmail: existing.email,
+        existingPhone: existing.phone,
+        existingId: existing._id,
+        inputEmail: email,
+        inputPhone: phone
+      });
+      
       return res.status(409).json({ 
         success: false,
-        message: 'User with this email or phone already exists' 
+        message: 'User with this email or phone already exists',
+        existingUser: {
+          email: existing.email,
+          phone: existing.phone
+        }
       });
     }
 
+    console.log('✅ No existing user found, creating new user...');
     const user = await User.create({ role, fullName, email, phone, password, location, dob });
+    console.log('✅ User created successfully:', user._id);
     
     try {
+      console.log('🔄 Generating and sending OTP...');
       const otpResults = await setOtpForUser(user);
+      
+      console.log('📊 OTP Results:', otpResults);
       
       let message = 'Registered successfully. ';
       

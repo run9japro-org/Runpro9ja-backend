@@ -1,63 +1,53 @@
-import nodemailer from 'nodemailer';
-import { env } from '../config/env.js';
+import nodemailer from "nodemailer";
+import twilio from "twilio";
+import { env } from "../config/env.js";
 
-// Use your simple Gmail transporter setup
-let transporter = null;
+let transporter;
 
+// ===== EMAIL SETUP =====
 try {
-  console.log('🔧 Initializing Gmail transporter...');
-  
-  // Check if credentials exist
-  if (!env.smtp?.user || !env.smtp?.pass) {
-    console.error('❌ Gmail credentials missing:');
-    console.log('   GMAIL_USER:', env.smtp?.user ? '✓ Found' : '✗ Missing');
-    console.log('   GMAIL_PASS:', env.smtp?.pass ? '✓ Found' : '✗ Missing');
-  } else {
-    console.log('✅ Gmail credentials found');
-    console.log('   User:', env.smtp.user);
-    console.log('   Pass:', `${env.smtp.pass.substring(0, 3)}...${env.smtp.pass.substring(env.smtp.pass.length - 3)}`);
-    
-    transporter = nodemailer.createTransport({
-      service: 'gmail',
-      auth: {
-        user: env.smtp.user,
-        pass: env.smtp.pass
-      }
-    });
+  console.log("🔧 Setting up Gmail transporter...");
 
-    // Test connection
-    await transporter.verify();
-    console.log('✅ Gmail transporter ready and connected');
+  if (!env.smtp.user || !env.smtp.pass) {
+    throw new Error("Missing Gmail credentials in .env");
   }
-} catch (error) {
-  console.error('❌ Gmail transporter failed:', error.message);
-  
-  if (error.code === 'EAUTH') {
-    console.log('\n💡 GMAIL AUTH FIX REQUIRED:');
-    console.log('   1. Go to: https://myaccount.google.com/');
-    console.log('   2. Enable 2-Factor Authentication');
-    console.log('   3. Go to "Security" → "App passwords"');
-    console.log('   4. Generate app password for "Mail"');
-    console.log('   5. Use the 16-character app password (NOT your regular password)');
-    console.log('   6. Update your .env file with the app password');
-  }
+
+  transporter = nodemailer.createTransport({
+    service: "gmail",
+    auth: {
+      user: env.smtp.user,
+      pass: env.smtp.pass
+    }
+  });
+
+  await transporter.verify();
+  console.log("✅ Gmail transporter ready!");
+} catch (err) {
+  console.error("❌ Email setup failed:", err.message);
 }
 
-export const sendEmailOtp = async ({ to, name, code }) => {
-  console.log(`📧 Attempting to send email to: ${to}`);
+// ===== SMS SETUP =====
+let twilioClient = null;
+try {
+  if (env.twilio.sid && env.twilio.token) {
+    twilioClient = twilio(env.twilio.sid, env.twilio.token);
+    console.log("✅ Twilio client initialized");
+  } else {
+    console.log("⚠️ Twilio not configured — SMS will be logged only");
+  }
+} catch (err) {
+  console.error("❌ Twilio setup failed:", err.message);
+}
 
+// ===== EMAIL FUNCTION =====
+export const sendEmailOtp = async ({ to, name, code }) => {
   if (!transporter) {
-    console.error('❌ Email transporter not available - check Gmail configuration');
-    return {
-      success: false,
-      service: 'email',
-      error: 'Email service not configured properly'
-    };
+    console.error("❌ Email transporter not initialized");
+    return { success: false, service: "email", error: "Email not configured" };
   }
 
-  try {
-    const message = `
-Hi ${name},
+  const message = `
+Hi ${name || "User"},
 
 Your RunPro9ja verification code is: ${code}
 
@@ -67,111 +57,72 @@ If you didn't request this code, please ignore this email.
 
 Best regards,
 RunPro9ja Team
-    `;
+  `;
 
-    const mailOptions = {
+  try {
+    const info = await transporter.sendMail({
       from: `"RunPro9ja" <${env.smtp.user}>`,
-      to: to,
-      subject: 'Your RunPro9ja Verification Code',
+      to,
+      subject: "Your RunPro9ja Verification Code",
       text: message
-    };
+    });
 
-    const info = await transporter.sendMail(mailOptions);
-    console.log('✅ Email sent successfully:', info.response);
-    console.log('✅ Message ID:', info.messageId);
-
-    return {
-      success: true,
-      service: 'email',
-      messageId: info.messageId,
-      response: info.response
-    };
-
+    console.log(`✅ Email sent to ${to}: ${info.response}`);
+    return { success: true, service: "email", messageId: info.messageId };
   } catch (error) {
-    console.error('❌ Failed to send email:', error.message);
-    
-    let userMessage = error.message;
-    
-    if (error.code === 'EAUTH') {
-      userMessage = 'Email authentication failed. Please use an App Password from Google.';
-    } else if (error.code === 'EENVELOPE') {
-      userMessage = 'Invalid email address.';
-    }
-
-    return {
-      success: false,
-      service: 'email',
-      error: userMessage
-    };
+    console.error("❌ Failed to send email:", error.message);
+    return { success: false, service: "email", error: error.message };
   }
 };
 
-// Simple SMS function (logs to console for now)
+// ===== SMS FUNCTION =====
 export const sendSmsOtp = async ({ to, code }) => {
-  console.log(`📱 [SMS SIMULATION] OTP for ${to}: ${code}`);
-  
-  // For development, just log the SMS
-  return {
-    success: true,
-    service: 'sms',
-    message: `OTP ${code} would be sent to ${to}`,
-    note: 'SMS service not configured - message logged to console'
-  };
+  if (!to) return { success: false, service: "sms", error: "Phone number missing" };
+
+  if (!twilioClient) {
+    console.log(`📱 [SMS LOG] OTP for ${to}: ${code}`);
+    return {
+      success: true,
+      service: "sms",
+      message: `OTP ${code} logged (Twilio not configured)`
+    };
+  }
+
+  try {
+    const message = await twilioClient.messages.create({
+      body: `Your RunPro9ja verification code is ${code}`,
+      from: env.twilio.phone,
+      to
+    });
+
+    console.log(`✅ SMS sent to ${to}: ${message.sid}`);
+    return { success: true, service: "sms", sid: message.sid };
+  } catch (error) {
+    console.error("❌ Failed to send SMS:", error.message);
+    return { success: false, service: "sms", error: error.message };
+  }
 };
 
+// ===== SEND BOTH =====
 export const sendOtpBothChannels = async ({ to, name, code, phone }) => {
-  console.log('🚀 Starting OTP delivery process...');
+  console.log("🚀 Sending OTP via both channels...");
   console.log(`   📧 Email: ${to}`);
   console.log(`   📱 Phone: ${phone}`);
   console.log(`   🔑 Code: ${code}`);
 
-  const results = {
-    email: null,
-    sms: null,
-    allSuccessful: false,
-    partialSuccess: false,
-    message: ''
-  };
+  const emailResult = to ? await sendEmailOtp({ to, name, code }) : null;
+  const smsResult = phone ? await sendSmsOtp({ to: phone, code }) : null;
 
-  // Send email OTP
-  if (to) {
-    console.log('📧 Sending email OTP...');
-    results.email = await sendEmailOtp({ to, name, code });
-  } else {
-    console.log('❌ No email address provided');
-  }
+  const allSuccessful = emailResult?.success && smsResult?.success;
+  const partialSuccess = emailResult?.success || smsResult?.success;
 
-  // Send SMS OTP
-  if (phone) {
-    console.log('📱 Sending SMS OTP...');
-    results.sms = await sendSmsOtp({ to: phone, code });
-  }
+  let message;
+  if (allSuccessful) message = "OTP sent via Email and SMS!";
+  else if (emailResult?.success) message = "OTP sent via Email!";
+  else if (smsResult?.success) message = "OTP sent via SMS!";
+  else message = "Failed to send OTP.";
 
-  // Determine results
-  const emailSuccess = results.email?.success || false;
-  const smsSuccess = results.sms?.success || false;
+  console.log("📊 Summary:", { allSuccessful, partialSuccess, message });
 
-  results.allSuccessful = emailSuccess && smsSuccess;
-  results.partialSuccess = emailSuccess || smsSuccess;
-
-  if (results.allSuccessful) {
-    results.message = 'OTP sent via email and SMS!';
-    console.log('✅ OTP delivered via both channels');
-  } else if (emailSuccess) {
-    results.message = 'OTP sent via email! Check your inbox.';
-    console.log('✅ OTP sent via email');
-  } else if (smsSuccess) {
-    results.message = 'OTP sent via SMS!';
-    console.log('✅ OTP sent via SMS');
-  } else {
-    results.message = 'Failed to send OTP. Please try again.';
-    console.log('❌ OTP delivery failed');
-  }
-
-  console.log('📊 OTP Delivery Summary:');
-  console.log('   Email:', emailSuccess ? '✅ Success' : '❌ Failed');
-  console.log('   SMS:', smsSuccess ? '✅ Success' : '❌ Failed');
-  console.log('   Message:', results.message);
-
-  return results;
+  return { emailResult, smsResult, allSuccessful, partialSuccess, message };
 };
