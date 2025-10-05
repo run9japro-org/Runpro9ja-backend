@@ -4,31 +4,59 @@ import { env } from "../config/env.js";
 
 let transporter;
 
-// ===== EMAIL SETUP =====
-try {
+// ===== EMAIL SETUP (Dual Port Fallback) =====
+async function setupEmailTransporter() {
   console.log("🔧 Setting up Gmail transporter...");
 
   if (!env.smtp.user || !env.smtp.pass) {
     throw new Error("Missing Gmail credentials in .env");
   }
 
-  transporter = nodemailer.createTransport({
-  host: "smtp.gmail.com",
-  port: 465,
-  secure: true, // ✅ SSL required for port 465
-  auth: {
-    user: env.smtp.user,
-    pass: env.smtp.pass
-  },
-  logger: true,  // ✅ show connection logs
-  debug: true,   // ✅ print SMTP communication
-  connectionTimeout: 60000,
-  greetingTimeout: 30000,
-  socketTimeout: 60000
-});
+  try {
+    // ---- Try SSL on port 465 ----
+    transporter = nodemailer.createTransport({
+      host: "smtp.gmail.com",
+      port: 465,
+      secure: true,
+      auth: {
+        user: env.smtp.user,
+        pass: env.smtp.pass
+      },
+      logger: true,
+      debug: true,
+      connectionTimeout: 60000,
+      socketTimeout: 60000
+    });
 
-  await transporter.verify();
-  console.log("✅ Gmail transporter ready!");
+    await transporter.verify();
+    console.log("✅ Gmail transporter connected via SSL (465)");
+  } catch (sslErr) {
+    console.warn("⚠️ SSL failed, retrying TLS (587)...", sslErr.message);
+
+    // ---- Fallback to TLS on port 587 ----
+    transporter = nodemailer.createTransport({
+      host: "smtp.gmail.com",
+      port: 587,
+      secure: false,
+      auth: {
+        user: env.smtp.user,
+        pass: env.smtp.pass
+      },
+      tls: { rejectUnauthorized: false },
+      logger: true,
+      debug: true,
+      connectionTimeout: 60000,
+      socketTimeout: 60000
+    });
+
+    await transporter.verify();
+    console.log("✅ Gmail transporter connected via TLS (587)");
+  }
+}
+
+// Initialize immediately
+try {
+  await setupEmailTransporter();
 } catch (err) {
   console.error("❌ Email setup failed:", err.message);
 }
