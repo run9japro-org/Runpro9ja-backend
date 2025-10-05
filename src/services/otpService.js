@@ -4,77 +4,51 @@ import { env } from "../config/env.js";
 
 let transporter;
 
-// ===== EMAIL SETUP (Dual Port Fallback) =====
-async function setupEmailTransporter() {
+// ===== EMAIL SETUP =====
+try {
   console.log("🔧 Setting up Gmail transporter...");
 
   if (!env.smtp.user || !env.smtp.pass) {
     throw new Error("Missing Gmail credentials in .env");
   }
 
-  try {
-    // ---- Try SSL on port 465 ----
-    transporter = nodemailer.createTransport({
-      host: "smtp.gmail.com",
-      port: 465,
-      secure: true,
-      auth: {
-        user: env.smtp.user,
-        pass: env.smtp.pass
-      },
-      logger: true,
-      debug: true,
-      connectionTimeout: 60000,
-      socketTimeout: 60000
-    });
+  // ✅ Working Gmail configuration
+  transporter = nodemailer.createTransport({
+    host: "smtp.gmail.com",
+    port: 587,
+    secure: false, // TLS (STARTTLS)
+    auth: {
+      user: env.smtp.user,
+      pass: env.smtp.pass,
+    },
+    requireTLS: true,
+    logger: true,
+    debug: true,
+    connectionTimeout: 60000,
+    greetingTimeout: 30000,
+    socketTimeout: 60000,
+  });
 
-    await transporter.verify();
-    console.log("✅ Gmail transporter connected via SSL (465)");
-  } catch (sslErr) {
-    console.warn("⚠️ SSL failed, retrying TLS (587)...", sslErr.message);
-
-    // ---- Fallback to TLS on port 587 ----
-    transporter = nodemailer.createTransport({
-      host: "smtp.gmail.com",
-      port: 587,
-      secure: false,
-      auth: {
-        user: env.smtp.user,
-        pass: env.smtp.pass
-      },
-      tls: { rejectUnauthorized: false },
-      logger: true,
-      debug: true,
-      connectionTimeout: 60000,
-      socketTimeout: 60000
-    });
-
-    await transporter.verify();
-    console.log("✅ Gmail transporter connected via TLS (587)");
-  }
-}
-
-// Initialize immediately
-try {
-  await setupEmailTransporter();
+  await transporter.verify();
+  console.log("✅ Gmail transporter ready!");
 } catch (err) {
   console.error("❌ Email setup failed:", err.message);
 }
 
-// ===== SMS SETUP =====
+// ===== TWILIO SETUP =====
 let twilioClient = null;
 try {
   if (env.twilio.sid && env.twilio.token) {
     twilioClient = twilio(env.twilio.sid, env.twilio.token);
     console.log("✅ Twilio client initialized");
   } else {
-    console.log("⚠️ Twilio not configured — SMS will be logged only");
+    console.log("⚠️ Twilio not configured — SMS will only log to console");
   }
 } catch (err) {
   console.error("❌ Twilio setup failed:", err.message);
 }
 
-// ===== EMAIL FUNCTION =====
+// ===== SEND EMAIL OTP =====
 export const sendEmailOtp = async ({ to, name, code }) => {
   if (!transporter) {
     console.error("❌ Email transporter not initialized");
@@ -99,7 +73,7 @@ RunPro9ja Team
       from: `"RunPro9ja" <${env.smtp.user}>`,
       to,
       subject: "Your RunPro9ja Verification Code",
-      text: message
+      text: message,
     });
 
     console.log(`✅ Email sent to ${to}: ${info.response}`);
@@ -110,7 +84,7 @@ RunPro9ja Team
   }
 };
 
-// ===== SMS FUNCTION =====
+// ===== SEND SMS OTP =====
 export const sendSmsOtp = async ({ to, code }) => {
   if (!to) return { success: false, service: "sms", error: "Phone number missing" };
 
@@ -119,7 +93,7 @@ export const sendSmsOtp = async ({ to, code }) => {
     return {
       success: true,
       service: "sms",
-      message: `OTP ${code} logged (Twilio not configured)`
+      message: `OTP ${code} logged (Twilio not configured)`,
     };
   }
 
@@ -127,7 +101,7 @@ export const sendSmsOtp = async ({ to, code }) => {
     const message = await twilioClient.messages.create({
       body: `Your RunPro9ja verification code is ${code}`,
       from: env.twilio.phone,
-      to
+      to,
     });
 
     console.log(`✅ SMS sent to ${to}: ${message.sid}`);
@@ -138,7 +112,7 @@ export const sendSmsOtp = async ({ to, code }) => {
   }
 };
 
-// ===== SEND BOTH =====
+// ===== SEND BOTH CHANNELS =====
 export const sendOtpBothChannels = async ({ to, name, code, phone }) => {
   console.log("🚀 Sending OTP via both channels...");
   console.log(`   📧 Email: ${to}`);
@@ -158,6 +132,5 @@ export const sendOtpBothChannels = async ({ to, name, code, phone }) => {
   else message = "Failed to send OTP.";
 
   console.log("📊 Summary:", { allSuccessful, partialSuccess, message });
-
   return { emailResult, smsResult, allSuccessful, partialSuccess, message };
 };
