@@ -105,85 +105,7 @@ res.json(profile);
 } catch (e) { next(e); }
 };
 
-// Get available agents for customers to choose from
-export const getAvailableAgents = async (req, res, next) => {
-  try {
-    const { serviceType } = req.query;
-    
-    console.log('🔍 Finding available agents for service:', serviceType);
 
-    // Build query based on service type
-    let query = { 
-      // Remove isVerified filter for now since your agent has isVerified: false
-      // isVerified: true
-    };
-
-    // Filter by service type if provided
-    if (serviceType) {
-      query.serviceType = new RegExp(serviceType, 'i'); // Case-insensitive search
-    }
-
-    // Find available agents and populate user data
-    const agents = await AgentProfile.find(query)
-      .populate('user', 'fullName email phone')
-      .populate('services', 'name description');
-
-    console.log(`✅ Found ${agents.length} agents`);
-
-    // Format the response for customers
-    const availableAgents = agents.map(agent => {
-      // Calculate realistic price based on service type and experience
-      const price = calculateDeliveryPrice(
-        agent.serviceType, 
-        agent.yearsOfExperience,
-        agent.servicesOffered
-      );
-      
-      // Determine vehicle type based on service
-      const vehicleType = getVehicleType(agent.serviceType);
-      
-      // Create agent bio from available data
-      const bio = createAgentBio(agent);
-
-      return {
-        _id: agent._id,
-        user: {
-          _id: agent.user?._id || 'unknown',
-          fullName: agent.user?.fullName || 'Unknown Agent',
-          email: agent.user?.email || '',
-          phone: agent.user?.phone || ''
-        },
-        profileImage: agent.profileImage,
-        rating: agent.rating || 4.5, // Default to 4.5 if no rating yet
-        completedJobs: agent.completedJobs || 0,
-        isVerified: agent.isVerified || false,
-        serviceType: agent.serviceType,
-        yearsOfExperience: agent.yearsOfExperience,
-        servicesOffered: agent.servicesOffered,
-        areasOfExpertise: agent.areasOfExpertise,
-        availability: agent.availability,
-        summary: agent.summary,
-        bio: agent.bio || bio,
-        location: agent.location,
-        // Mock distance for demo - you can add real location later
-        distance: (Math.random() * 5 + 1).toFixed(1), // Random distance 1-6 km
-        price: price,
-        vehicleType: vehicleType
-      };
-    });
-
-    res.json({
-      success: true,
-      agents: availableAgents,
-      count: availableAgents.length,
-      message: `Found ${availableAgents.length} available agents`
-    });
-
-  } catch (e) {
-    console.error('Error fetching available agents:', e);
-    next(e);
-  }
-};
 
 // Improved price calculation based on your actual data
 const calculateDeliveryPrice = (serviceType, yearsOfExperience, servicesOffered) => {
@@ -248,4 +170,86 @@ const createAgentBio = (agent) => {
   }
   
   return parts.join(' • ') || 'Professional service provider';
+};
+// Get available agents for customers to choose from
+export const getAvailableAgents = async (req, res, next) => {
+  try {
+    const { serviceType, categoryId } = req.query;
+    
+    console.log('🔍 Finding available agents for service:', serviceType);
+
+    // Build query based on service type
+    let query = {};
+
+    // Filter by service type if provided
+    if (serviceType) {
+      query.serviceType = new RegExp(serviceType, 'i'); // Case-insensitive search
+    }
+
+    // Alternative: Filter by service category ID if provided
+    if (categoryId) {
+      query.services = categoryId;
+    }
+
+    // Find available agents and populate user data
+    const agents = await AgentProfile.find(query)
+      .populate('user', 'fullName email phone')
+      .populate('services', 'name description');
+
+    console.log(`✅ Found ${agents.length} agents for service: ${serviceType}`);
+
+    // Format the response for customers
+    const availableAgents = agents.map(agent => {
+      // Calculate realistic price based on service type and experience
+      const price = calculateDeliveryPrice(
+        agent.serviceType, 
+        agent.yearsOfExperience,
+        agent.servicesOffered
+      );
+      
+      // Determine vehicle type based on service
+      const vehicleType = getVehicleType(agent.serviceType);
+      
+      // Create agent bio from available data
+      const bio = createAgentBio(agent);
+
+      return {
+        _id: agent._id,
+        user: {
+          _id: agent.user?._id || 'unknown',
+          fullName: agent.user?.fullName || 'Unknown Agent',
+          email: agent.user?.email || '',
+          phone: agent.user?.phone || ''
+        },
+        profileImage: agent.profileImage,
+        rating: agent.rating || 4.5,
+        completedJobs: agent.completedJobs || 0,
+        isVerified: agent.isVerified || false,
+        serviceType: agent.serviceType,
+        yearsOfExperience: agent.yearsOfExperience,
+        servicesOffered: agent.servicesOffered,
+        areasOfExpertise: agent.areasOfExpertise,
+        availability: agent.availability,
+        summary: agent.summary,
+        bio: agent.bio || bio,
+        location: agent.location,
+        distance: (Math.random() * 5 + 1).toFixed(1),
+        price: price,
+        vehicleType: vehicleType,
+        // Include service categories for filtering
+        serviceCategories: agent.services || []
+      };
+    });
+
+    res.json({
+      success: true,
+      agents: availableAgents,
+      count: availableAgents.length,
+      message: `Found ${availableAgents.length} available agents${serviceType ? ` for ${serviceType}` : ''}`
+    });
+
+  } catch (e) {
+    console.error('Error fetching available agents:', e);
+    next(e);
+  }
 };
