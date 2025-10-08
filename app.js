@@ -17,7 +17,7 @@ import deliveryRoutes from "./src/routes/deliveryRoutes.js";
 import paymentRoutes from "./src/routes/paymentRoutes.js";
 import withdrawalRoutes from "./src/routes/withdrawalRoutes.js";
 import chatRoutes from "./src/routes/chatRoutes.js";
-// import notificationRoutes from "./src/routes/notificationRoutes.js";
+import notificationRoutes from "./src/routes/notificationRoutes.js";
 import adminRoutes from "./src/routes/adminRoutes.js";
 
 import customerRoutes from './src/routes/customerRoutes.js';
@@ -64,7 +64,7 @@ app.use("/uploads", express.static(path.join(process.cwd(), "uploads")));
 app.use("/api/payments", paymentRoutes);
 // app.use("/api/withdrawals", withdrawalRoutes);
 app.use("/api/chat", chatRoutes);
-// app.use("/api/notifications", notificationRoutes);
+app.use("/api/notifications", notificationRoutes);
 app.use("/api/admin", adminRoutes);
 
 // ✅ Error handlers
