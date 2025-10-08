@@ -90,26 +90,7 @@ export const login = async (req, res, next) => {
     if (!isPasswordValid)
       return res.status(401).json({ success: false, message: 'Invalid credentials' });
 
-    if (!user.isVerified) {
-      try {
-        const otpResult = await setOtpForUser(user);
-        return res.status(403).json({
-          success: false,
-          message: 'Account not verified. OTP re-sent to your email.',
-          needsVerification: true,
-          userId: user._id,
-          otpDelivery: { email: otpResult.email.success }
-        });
-      } catch (otpError) {
-        console.error('OTP resend failed:', otpError.message);
-        return res.status(403).json({
-          success: false,
-          message: 'Account not verified. Please try resending OTP.',
-          needsVerification: true,
-          userId: user._id
-        });
-      }
-    }
+    
 
     const token = issueToken({
       id: user._id,
