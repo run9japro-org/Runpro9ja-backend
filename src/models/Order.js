@@ -1,7 +1,12 @@
+// models/Order.js
 import mongoose from 'mongoose';
 
 const statusSchema = new mongoose.Schema({
-  status: { type: String, enum: ['requested','accepted','rejected','in-progress','completed'], required: true },
+  status: { 
+    type: String, 
+    enum: ['requested', 'accepted', 'rejected', 'in-progress', 'completed', 'cancelled'],
+    required: true 
+  },
   timestamp: { type: Date, default: Date.now },
   note: { type: String }
 });
@@ -14,32 +19,48 @@ const orderSchema = new mongoose.Schema({
   price: { type: Number },
   location: { type: String },
   
-  // ✅ UPDATED STATUS OPTIONS
+  // Enhanced status system
   status: { 
     type: String, 
     enum: [
       'pending_agent_response',
       'public', 
       'accepted',
-      'rejected', 
       'in-progress', 
-      'completed'
+      'completed',
+      'cancelled',
+      'rejected'
     ], 
     default: 'pending_agent_response' 
   },
   
-  // ✅ NEW FIELDS
+  // Schedule information
+  scheduledDate: { type: Date }, // When the service is scheduled for
+  scheduledTime: { type: String }, // "10:00 AM", "2:30 PM", etc.
+  estimatedDuration: { type: Number }, // Duration in minutes
+  
+  // Completion tracking
+  startedAt: { type: Date },
+  completedAt: { type: Date },
+  
+  // Payment status
+  paymentStatus: {
+    type: String,
+    enum: ['pending', 'paid', 'failed', 'refunded'],
+    default: 'pending'
+  },
+  
+  // Rating and review
+  rating: { type: Number, min: 1, max: 5 },
+  review: { type: String },
+  reviewedAt: { type: Date },
+  
   requestedAgent: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
   declinedBy: [{ 
     agent: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
     timestamp: { type: Date, default: Date.now },
     reason: { type: String }
   }],
-  paymentStatus: {
-    type: String,
-    enum: ['pending', 'paid', 'failed', 'refunded'],
-    default: 'pending'
-  },
   
   timeline: [statusSchema],
   currentLocation: {
@@ -55,8 +76,14 @@ const orderSchema = new mongoose.Schema({
       timestamp: { type: Date, default: Date.now }
     }
   ]
-}, { timestamps: true });
+}, { 
+  timestamps: true 
+});
 
-orderSchema.index({ currentLocation: '2dsphere' });
+// Index for better query performance
+orderSchema.index({ customer: 1, status: 1 });
+orderSchema.index({ agent: 1, status: 1 });
+orderSchema.index({ scheduledDate: 1 });
+orderSchema.index({ status: 1 });
 
 export default mongoose.model('Order', orderSchema);

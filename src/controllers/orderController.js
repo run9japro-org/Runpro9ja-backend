@@ -373,35 +373,6 @@ export const getAgentOrders = async (req, res) => {
   }
 };
 
-// Update order status
-export const updateStatus = async (req, res) => {
-  try {
-    const { status } = req.body;
-    const order = await Order.findById(req.params.id);
-    
-    if (!order) {
-      return res.status(404).json({ 
-        success: false,
-        error: 'Order not found' 
-      });
-    }
-
-    order.status = status;
-    order.timeline.push({ status });
-    await order.save();
-
-    res.json({
-      success: true,
-      message: `Order status updated to ${status}`,
-      order
-    });
-  } catch (err) {
-    res.status(500).json({ 
-      success: false,
-      error: err.message 
-    });
-  }
-};
 
 // Get order by ID
 export const getOrderById = async (req, res) => {
@@ -422,6 +393,408 @@ export const getOrderById = async (req, res) => {
     res.json({
       success: true,
       order
+    });
+  } catch (err) {
+    res.status(500).json({ 
+      success: false,
+      error: err.message 
+    });
+  }
+};
+export const updateStatus = async (req, res) => {
+  try {
+    const { status, note } = req.body;
+    const order = await Order.findById(req.params.id)
+      .populate('customer', 'fullName email phone')
+      .populate('agent', 'fullName email phone');
+
+    if (!order) {
+      return res.status(404).json({ 
+        success: false,
+        error: 'Order not found' 
+      });
+    }
+
+    const previousStatus = order.status;
+    order.status = status;
+    
+    // Track start and completion times
+    if (status === 'in-progress' && previousStatus !== 'in-progress') {
+      order.startedAt = new Date();
+    }
+    
+    if (status === 'completed' && previousStatus !== 'completed') {
+      order.completedAt = new Date();
+    }
+
+    order.timeline.push({ 
+      status, 
+      note: note || `Status changed from ${previousStatus} to ${status}` 
+    });
+    
+    await order.save();
+
+    // Notify customer about status change
+    await notifyUser(
+      order.customer._id,
+      'ORDER_STATUS_UPDATED',
+      [order._id, status, note],
+      req.io
+    );
+
+    res.json({
+      success: true,
+      message: `Order status updated to ${status}`,
+      order
+    });
+  } catch (err) {
+    res.status(500).json({ 
+      success: false,
+      error: err.message 
+    });
+  }
+};
+
+// Schedule an order
+export const scheduleOrder = async (req, res) => {
+  try {
+    const { scheduledDate, scheduledTime, estimatedDuration } = req.body;
+    const order = await Order.findById(req.params.id);
+
+    if (!order) {
+      return res.status(404).json({ 
+        success: false,
+        error: 'Order not found' 
+      });
+    }
+
+    // Check if order is accepted
+    if (order.status !== 'accepted') {
+      return res.status(400).json({
+        success: false,
+        error: 'Only accepted orders can be scheduled'
+      });
+    }
+
+    order.scheduledDate = new Date(scheduledDate);
+    order.scheduledTime = scheduledTime;
+    order.estimatedDuration = estimatedDuration;
+    
+    await order.save();
+
+    // Notify both customer and agent
+    await notifyUser(
+      order.customer._id,
+      'ORDER_SCHEDULED',
+      [order._id, scheduledDate, scheduledTime],
+      req.io
+    );
+
+    await notifyUser(
+      order.agent._id,
+      'ORDER_SCHEDULED_AGENT',
+      [order._id, scheduledDate, scheduledTime],
+      req.io
+    );
+
+    res.json({
+      success: true,
+      message: 'Order scheduled successfully',
+      order
+    });
+  } catch (err) {
+    res.status(500).json({ 
+      success: false,
+      error: err.message 
+    });
+  }
+};
+
+// Add review and rating
+export const addReview = async (req, res) => {
+  try {
+    const { rating, review } = req.body;
+    const order = await Order.findById(req.params.id);
+
+    if (!order) {
+      return res.status(404).json({ 
+        success: false,
+        error: 'Order not found' 
+      });
+    }
+
+    // Check if order is completed
+    if (order.status !== 'completed') {
+      return res.status(400).json({
+        success: false,
+        error: 'Only completed orders can be reviewed'
+      });
+    }
+
+    // Check if customer owns this order
+    if (order.customer.toString() !== req.user.id) {
+      return res.status(403).json({
+        success: false,
+        error: 'You can only review your own orders'
+      });
+    }
+
+    order.rating = rating;
+    order.review = review;
+    order.reviewedAt = new Date();
+    
+    await order.save();
+
+    // Notify agent about review
+    await notifyUser(
+      order.agent._id,
+      'ORDER_REVIEWED',
+      [order._id, rating],
+      req.io
+    );
+
+    res.json({
+      success: true,
+      message: 'Review added successfully',
+      order
+    });
+  } catch (err) {
+    res.status(500).json({ 
+      success: false,
+      error: err.message 
+    });
+  }
+};
+
+// 🔥 NEW: Get Customer Service History
+export const getCustomerServiceHistory = async (req, res) => {
+  try {
+    const { status, page = 1, limit = 10, dateFrom, dateTo } = req.query;
+    
+    const query = { customer: req.user.id };
+    
+    // Filter by status
+    if (status && status !== 'all') {
+      if (status === 'ongoing') {
+        query.status = { $in: ['accepted', 'in-progress'] };
+      } else if (status === 'completed') {
+        query.status = 'completed';
+      } else {
+        query.status = status;
+      }
+    }
+    
+    // Filter by date range
+    if (dateFrom || dateTo) {
+      query.createdAt = {};
+      if (dateFrom) query.createdAt.$gte = new Date(dateFrom);
+      if (dateTo) query.createdAt.$lte = new Date(dateTo);
+    }
+
+    const orders = await Order.find(query)
+      .populate('serviceCategory', 'name description')
+      .populate('agent', 'fullName profileImage rating')
+      .sort({ createdAt: -1 })
+      .limit(limit * 1)
+      .skip((page - 1) * limit);
+
+    const total = await Order.countDocuments(query);
+
+    // Calculate statistics
+    const totalOrders = await Order.countDocuments({ customer: req.user.id });
+    const completedOrders = await Order.countDocuments({ 
+      customer: req.user.id, 
+      status: 'completed' 
+    });
+    const ongoingOrders = await Order.countDocuments({ 
+      customer: req.user.id, 
+      status: { $in: ['accepted', 'in-progress'] } 
+    });
+
+    res.json({
+      success: true,
+      orders,
+      pagination: {
+        current: parseInt(page),
+        pages: Math.ceil(total / limit),
+        total
+      },
+      statistics: {
+        total: totalOrders,
+        completed: completedOrders,
+        ongoing: ongoingOrders,
+        completionRate: totalOrders > 0 ? (completedOrders / totalOrders * 100).toFixed(1) : 0
+      }
+    });
+  } catch (err) {
+    res.status(500).json({ 
+      success: false,
+      error: err.message 
+    });
+  }
+};
+
+// 🔥 NEW: Get Agent Service History
+export const getAgentServiceHistory = async (req, res) => {
+  try {
+    const { status, page = 1, limit = 10, dateFrom, dateTo } = req.query;
+    
+    const query = { agent: req.user.id };
+    
+    // Filter by status
+    if (status && status !== 'all') {
+      if (status === 'ongoing') {
+        query.status = { $in: ['accepted', 'in-progress'] };
+      } else if (status === 'completed') {
+        query.status = 'completed';
+      } else {
+        query.status = status;
+      }
+    }
+    
+    // Filter by date range
+    if (dateFrom || dateTo) {
+      query.createdAt = {};
+      if (dateFrom) query.createdAt.$gte = new Date(dateFrom);
+      if (dateTo) query.createdAt.$lte = new Date(dateTo);
+    }
+
+    const orders = await Order.find(query)
+      .populate('serviceCategory', 'name description')
+      .populate('customer', 'fullName profileImage phone')
+      .sort({ createdAt: -1 })
+      .limit(limit * 1)
+      .skip((page - 1) * limit);
+
+    const total = await Order.countDocuments(query);
+
+    // Calculate agent statistics
+    const totalOrders = await Order.countDocuments({ agent: req.user.id });
+    const completedOrders = await Order.countDocuments({ 
+      agent: req.user.id, 
+      status: 'completed' 
+    });
+    const ongoingOrders = await Order.countDocuments({ 
+      agent: req.user.id, 
+      status: { $in: ['accepted', 'in-progress'] } 
+    });
+    const totalEarnings = await Order.aggregate([
+      { $match: { agent: req.user.id, status: 'completed' } },
+      { $group: { _id: null, total: { $sum: '$price' } } }
+    ]);
+
+    res.json({
+      success: true,
+      orders,
+      pagination: {
+        current: parseInt(page),
+        pages: Math.ceil(total / limit),
+        total
+      },
+      statistics: {
+        total: totalOrders,
+        completed: completedOrders,
+        ongoing: ongoingOrders,
+        totalEarnings: totalEarnings[0]?.total || 0,
+        completionRate: totalOrders > 0 ? (completedOrders / totalOrders * 100).toFixed(1) : 0,
+        averageRating: 4.5 // You can calculate this from reviews
+      }
+    });
+  } catch (err) {
+    res.status(500).json({ 
+      success: false,
+      error: err.message 
+    });
+  }
+};
+
+// 🔥 NEW: Get Today's Schedule
+export const getTodaysSchedule = async (req, res) => {
+  try {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const tomorrow = new Date(today);
+    tomorrow.setDate(tomorrow.getDate() + 1);
+
+    const query = {
+      agent: req.user.id,
+      scheduledDate: {
+        $gte: today,
+        $lt: tomorrow
+      },
+      status: { $in: ['accepted', 'in-progress'] }
+    };
+
+    const schedule = await Order.find(query)
+      .populate('customer', 'fullName phone location')
+      .populate('serviceCategory', 'name')
+      .sort({ scheduledTime: 1 });
+
+    // Group by time slots
+    const morning = schedule.filter(order => 
+      order.scheduledTime && order.scheduledTime.includes('AM')
+    );
+    const afternoon = schedule.filter(order => 
+      order.scheduledTime && order.scheduledTime.includes('PM')
+    );
+
+    res.json({
+      success: true,
+      schedule: {
+        morning,
+        afternoon,
+        all: schedule
+      },
+      date: today.toISOString().split('T')[0]
+    });
+  } catch (err) {
+    res.status(500).json({ 
+      success: false,
+      error: err.message 
+    });
+  }
+};
+
+// 🔥 NEW: Get Upcoming Schedule
+export const getUpcomingSchedule = async (req, res) => {
+  try {
+    const { days = 7 } = req.query;
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const futureDate = new Date(today);
+    futureDate.setDate(futureDate.getDate() + parseInt(days));
+
+    const query = {
+      agent: req.user.id,
+      scheduledDate: {
+        $gte: today,
+        $lt: futureDate
+      },
+      status: { $in: ['accepted', 'in-progress'] }
+    };
+
+    const schedule = await Order.find(query)
+      .populate('customer', 'fullName phone location')
+      .populate('serviceCategory', 'name')
+      .sort({ scheduledDate: 1, scheduledTime: 1 });
+
+    // Group by date
+    const scheduleByDate = schedule.reduce((acc, order) => {
+      const date = order.scheduledDate.toISOString().split('T')[0];
+      if (!acc[date]) {
+        acc[date] = [];
+      }
+      acc[date].push(order);
+      return acc;
+    }, {});
+
+    res.json({
+      success: true,
+      schedule: scheduleByDate,
+      dateRange: {
+        from: today.toISOString().split('T')[0],
+        to: futureDate.toISOString().split('T')[0]
+      }
     });
   } catch (err) {
     res.status(500).json({ 

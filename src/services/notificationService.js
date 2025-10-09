@@ -95,13 +95,49 @@ export const NotificationTemplates = {
     priority: 'low',
     actionUrl: '/services'
   }),
+// Add to your notificationService.js
+ORDER_STATUS_UPDATED: (orderId, status, note) => ({
+  title: 'Order Status Updated',
+  message: `Order #${orderId} is now ${status}. ${note || ''}`,
+  type: 'order_update',
+  priority: 'medium',
+  data: { orderId, status, note },
+  actionUrl: `/orders/${orderId}`
+}),
 
+ORDER_SCHEDULED: (orderId, date, time) => ({
+  title: 'Order Scheduled',
+  message: `Your order #${orderId} has been scheduled for ${date} at ${time}.`,
+  type: 'order_update',
+  priority: 'medium',
+  data: { orderId, date, time },
+  actionUrl: `/orders/${orderId}`
+}),
+
+ORDER_SCHEDULED_AGENT: (orderId, date, time) => ({
+  title: 'Order Scheduled',
+  message: `Order #${orderId} has been scheduled for ${date} at ${time}.`,
+  type: 'order_update',
+  priority: 'medium',
+  data: { orderId, date, time },
+  actionUrl: `/agent/orders/${orderId}`
+}),
+
+ORDER_REVIEWED: (orderId, rating) => ({
+  title: 'New Review',
+  message: `You received a ${rating} star rating for order #${orderId}.`,
+  type: 'review',
+  priority: 'low',
+  data: { orderId, rating },
+  actionUrl: `/agent/orders/${orderId}`
+}),
   PROMOTION: (offer) => ({
     title: 'Special Offer!',
     message: offer,
     type: 'promotion', // ✅ This must match your enum
     priority: 'low'
   })
+
 };
 
 // Service functions for common notification scenarios
