@@ -278,16 +278,23 @@ export const updateMyProfile = async (req, res) => {
     });
   }
 };
-
-// GET /customers/me/history
 export const getMyServiceHistory = async (req, res) => {
   try {
     const orders = await Order.find({ customer: req.user.id })
-      .populate('agent', 'fullName role avatarUrl')
+      .populate('agent', 'fullName avatarUrl rating')
+      .populate('serviceCategory', 'name description')
       .sort({ createdAt: -1 });
 
-    res.json(orders);
+    res.json({
+      success: true,
+      orders: orders,
+      count: orders.length
+    });
   } catch (err) {
-    res.status(500).json({ message: err.message });
+    console.error('Service history error:', err);
+    res.status(500).json({ 
+      success: false,
+      error: err.message 
+    });
   }
 };
