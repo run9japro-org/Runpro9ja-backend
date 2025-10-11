@@ -11,13 +11,15 @@ import {
 } from '../controllers/agentController.js';
 import { authGuard, requireRoles } from '../middlewares/auth.js';
 import { ROLES } from '../constants/roles.js';
-
+import{addBankAccount } from '../controllers/authController.js'
 const router = Router();
 
 // Agent creates/updates their profile
 router.post('/me', authGuard, requireRoles(ROLES.AGENT), createOrUpdateProfile);
 router.get('/me', authGuard, requireRoles(ROLES.AGENT), getMyProfile);
 router.post("/upload-profile", authGuard, upload.single("profileImage"), uploadimage);
+
+router.post('/add-bank', authGuard, requireRoles(ROLES.AGENT), addBankAccount);
 
 // ✅ FIXED: Map /available to getAvailableAgents instead of getAgentProfile
 router.get('/available', getAvailableAgents);
