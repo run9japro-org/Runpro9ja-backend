@@ -178,6 +178,57 @@ export const me = async (req, res, next) => {
 };
 
 
+// POST /api/user/add-bank
+export const addBankAccount = async (req, res) => {
+  try {
+    console.log('🏦 Adding bank account for user:', req.user.id);
+    const { accountName, accountNumber, bankName, bankCode } = req.body;
+
+    if (!accountName || !accountNumber || !bankName) {
+      return res.status(400).json({
+        success: false,
+        message: 'Please provide account name, number, and bank name.',
+      });
+    }
+
+    // Update or add bank details
+    const user = await User.findByIdAndUpdate(
+      req.user.id,
+      {
+        bankDetails: {
+          accountName,
+          accountNumber,
+          bankName,
+          bankCode: bankCode || '',
+        },
+      },
+      { new: true, runValidators: true }
+    ).select('-password -otpCode -otpExpiresAt');
+
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: 'User not found',
+      });
+    }
+
+    console.log('✅ Bank account added successfully for:', user.fullName);
+
+    res.status(200).json({
+      success: true,
+      message: 'Bank account added successfully.',
+      bankDetails: user.bankDetails,
+    });
+  } catch (err) {
+    console.error('❌ Add bank error:', err);
+    res.status(500).json({
+      success: false,
+      message: 'Server error',
+    });
+  }
+};
+
+
 // GET /api/customers/me
 export const getMyProfile = async (req, res) => {
   try {
