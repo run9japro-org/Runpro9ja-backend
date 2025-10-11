@@ -1,10 +1,22 @@
 // models/Order.js
 import mongoose from 'mongoose';
-
+// In models/Order.js - update the status enum
 const statusSchema = new mongoose.Schema({
   status: { 
     type: String, 
-    enum: ['requested', 'accepted', 'rejected', 'in-progress', 'completed', 'cancelled'],
+    enum: [
+      'requested', 
+      'inspection_scheduled', 
+      'inspection_completed',
+      'quotation_provided', 
+      'quotation_accepted',
+      'agent_selected',
+      'accepted', 
+      'rejected', 
+      'in-progress', 
+      'completed', 
+      'cancelled'
+    ],
     required: true 
   },
   timestamp: { type: Date, default: Date.now },
@@ -14,25 +26,25 @@ const statusSchema = new mongoose.Schema({
 const orderSchema = new mongoose.Schema({
   customer: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
   agent: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
+  representative: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
   serviceCategory: { type: mongoose.Schema.Types.ObjectId, ref: 'ServiceCategory', required: true },
   details: { type: String },
   price: { type: Number },
   location: { type: String },
   
-  // Enhanced status system
-  status: { 
-    type: String, 
-    enum: [
-      'pending_agent_response',
-      'public', 
-      'accepted',
-      'in-progress', 
-      'completed',
-      'cancelled',
-      'rejected'
-    ], 
-    default: 'pending_agent_response' 
+   orderType: {
+    type: String,
+    enum: ['normal', 'professional'],
+    default: 'normal'
   },
+
+  // For professional flow
+  quotationDetails: { type: String },
+  quotationAmount: { type: Number },
+  quotationProvidedAt: { type: Date },
+  inspectionDate: { type: Date },
+  inspectedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
+  recommendedAgents: [{ type: mongoose.Schema.Types.ObjectId, ref: 'User' }],
   
   // Schedule information
   scheduledDate: { type: Date }, // When the service is scheduled for

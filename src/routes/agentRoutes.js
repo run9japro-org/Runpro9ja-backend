@@ -7,6 +7,7 @@ import {
   unassignServiceFromAgent,
   uploadimage,
   upload,
+  getAgentsForProfessionalService,
   getAvailableAgents // ✅ Make sure this is imported
 } from '../controllers/agentController.js';
 import { authGuard, requireRoles } from '../middlewares/auth.js';
@@ -23,7 +24,7 @@ router.post('/add-bank', authGuard, requireRoles(ROLES.AGENT), addBankAccount);
 
 // ✅ FIXED: Map /available to getAvailableAgents instead of getAgentProfile
 router.get('/available', getAvailableAgents);
-
+router.get('/professional', getAgentsForProfessionalService);
 // Public: get agent profile by user id
 router.get('/:userId', getAgentProfile);
 

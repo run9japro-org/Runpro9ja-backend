@@ -4,56 +4,116 @@ import { notifyUser } from '../services/notificationService.js';
 // Step 1: Customer creates order with selected agent
 export const createOrder = async (req, res) => {
   try {
-    const { requestedAgent, ...orderData } = req.body;
-    
-    if (!requestedAgent) {
-      return res.status(400).json({
-        success: false,
-        error: 'Please select an agent for this order'
-      });
-    }
+    const { requestedAgent, orderType = 'normal', ...orderData } = req.body;
 
-    const order = new Order({ 
+    const order = new Order({
       ...orderData,
       customer: req.user.id,
-      requestedAgent: requestedAgent,
-      status: 'pending_agent_response', // Waiting for agent decision
-      paymentStatus: 'pending' // Payment happens after acceptance
+      requestedAgent: requestedAgent || null,
+      orderType,
+      status: orderType === 'professional'
+        ? 'inspection_scheduled'
+        : 'pending_agent_response',
+      paymentStatus: 'pending'
     });
-    
-    order.timeline.push({ 
-      status: 'requested', 
-      note: `Order created and offered to specific agent` 
+
+    order.timeline.push({
+      status: 'requested',
+      note:
+        orderType === 'professional'
+          ? 'Representative will inspect before quotation.'
+          : 'Waiting for agent response.'
     });
-    
+
     await order.save();
 
-    // ✅ Notify the SPECIFIC agent about the direct offer
-    await notifyUser(
-      requestedAgent,
-      'DIRECT_ORDER_OFFER',
-      [order._id, req.user.fullName, order.serviceType],
-      req.io
-    );
-
-    // ✅ Notify customer
+    // Notify accordingly
     await notifyUser(
       req.user.id,
       'ORDER_CREATED',
-      [order._id, order.serviceType],
+      [order._id, order.serviceCategory],
       req.io
     );
 
     res.status(201).json({
       success: true,
-      message: 'Order created successfully. Waiting for agent response.',
+      message:
+        orderType === 'professional'
+          ? 'Professional service request created. Representative will inspect.'
+          : 'Order created successfully. Waiting for agent response.',
       order
     });
   } catch (err) {
-    res.status(500).json({ 
-      success: false,
-      error: err.message 
+    res.status(500).json({ success: false, error: err.message });
+  }
+};
+
+export const submitQuotation = async (req, res) => {
+  try {
+    const { quotationAmount, quotationDetails, recommendedAgents } = req.body;
+
+    const order = await Order.findById(req.params.id);
+    if (!order) return res.status(404).json({ success: false, error: 'Order not found' });
+
+    if (order.orderType !== 'professional') {
+      return res.status(400).json({ success: false, error: 'Not a professional order' });
+    }
+
+    order.quotationAmount = quotationAmount;
+    order.quotationDetails = quotationDetails;
+    order.recommendedAgents = recommendedAgents || [];
+    order.quotationProvidedAt = new Date();
+    order.status = 'quotation_provided';
+
+    order.timeline.push({
+      status: 'quotation_provided',
+      note: `Quotation submitted by ${req.user.fullName}`
     });
+
+    await order.save();
+
+    // Notify customer
+    await notifyUser(order.customer, 'QUOTATION_READY', [order._id], req.io);
+
+    res.json({
+      success: true,
+      message: 'Quotation submitted successfully',
+      order
+    });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+};
+
+
+export const acceptQuotation = async (req, res) => {
+  try {
+    const order = await Order.findById(req.params.id);
+    if (!order) return res.status(404).json({ success: false, error: 'Order not found' });
+
+    if (order.status !== 'quotation_provided') {
+      return res.status(400).json({ success: false, error: 'Quotation not available yet' });
+    }
+
+    // Change status to quotation_accepted (NOT awaiting_payment)
+    order.status = 'quotation_accepted';
+    order.timeline.push({ 
+      status: 'quotation_accepted', 
+      note: 'Customer accepted quotation. Ready for agent selection.' 
+    });
+
+    await order.save();
+
+    await notifyUser(order.customer, 'QUOTATION_ACCEPTED', [order._id], req.io);
+
+    res.json({
+      success: true,
+      message: 'Quotation accepted. Please select an agent to proceed.',
+      nextStep: 'agent_selection', // Frontend knows to show agent selection
+      order
+    });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
   }
 };
 
@@ -795,6 +855,136 @@ export const getUpcomingSchedule = async (req, res) => {
         from: today.toISOString().split('T')[0],
         to: futureDate.toISOString().split('T')[0]
       }
+    });
+  } catch (err) {
+    res.status(500).json({ 
+      success: false,
+      error: err.message 
+    });
+  }
+};
+
+export const createProfessionalOrder = async (req, res) => {
+  try {
+    const { serviceCategory, details, location, ...orderData } = req.body;
+
+    const order = new Order({
+      ...orderData,
+      customer: req.user.id,
+      serviceCategory,
+      details,
+      location,
+      orderType: 'professional',
+      status: 'requested',
+      paymentStatus: 'pending'
+    });
+
+    order.timeline.push({
+      status: 'requested',
+      note: 'Professional service requested. Waiting for representative inspection and quotation.'
+    });
+
+    await order.save();
+    await order.populate('serviceCategory', 'name description');
+
+    // Notify admin/representatives about new professional order
+    // You might want to notify all representatives here
+    if (req.io) {
+      req.io.emit('new_professional_order', {
+        type: 'PROFESSIONAL_ORDER_CREATED',
+        data: {
+          orderId: order._id,
+          serviceCategory: order.serviceCategory.name,
+          customerName: req.user.fullName,
+          location: order.location
+        }
+      });
+    }
+
+    res.status(201).json({
+      success: true,
+      message: 'Professional service request created. A representative will contact you for inspection and quotation.',
+      order
+    });
+  } catch (err) {
+    res.status(500).json({ 
+      success: false,
+      error: err.message 
+    });
+  }
+};
+
+// NEW: Customer selects agent after accepting quotation
+export const selectAgentAfterQuotation = async (req, res) => {
+  try {
+    const { agentId } = req.body;
+
+    const order = await Order.findById(req.params.id);
+    if (!order) {
+      return res.status(404).json({ 
+        success: false,
+        error: 'Order not found' 
+      });
+    }
+
+    // Check if order is in the correct state
+    if (order.status !== 'quotation_accepted') {
+      return res.status(400).json({
+        success: false,
+        error: 'Quotation must be accepted before selecting an agent'
+      });
+    }
+
+    // Validate agent is in recommended agents (optional)
+    if (order.recommendedAgents && order.recommendedAgents.length > 0) {
+      const isRecommended = order.recommendedAgents.some(
+        recAgent => recAgent.toString() === agentId
+      );
+      
+      if (!isRecommended) {
+        return res.status(400).json({
+          success: false,
+          error: 'Selected agent is not in the recommended list'
+        });
+      }
+    }
+
+    // Assign the selected agent
+    order.agent = agentId;
+    order.status = 'agent_selected';
+    
+    order.timeline.push({
+      status: 'agent_selected',
+      note: `Customer selected agent for the service`
+    });
+
+    await order.save();
+
+    // Populate for response
+    await order.populate('agent', 'fullName email phone');
+    await order.populate('customer', 'fullName email phone');
+
+    // Notify the selected agent
+    await notifyUser(
+      agentId,
+      'AGENT_SELECTED_FOR_QUOTATION',
+      [order._id, order.customer.fullName, order.quotationAmount],
+      req.io
+    );
+
+    // Notify customer
+    await notifyUser(
+      order.customer._id,
+      'AGENT_SELECTED_CONFIRMED',
+      [order._id, order.agent.fullName],
+      req.io
+    );
+
+    res.json({
+      success: true,
+      message: 'Agent selected successfully. Order is now ready to proceed.',
+      order,
+      nextStep: 'scheduling' // Frontend knows to proceed to scheduling
     });
   } catch (err) {
     res.status(500).json({ 

@@ -11,25 +11,31 @@ import {
   getPublicOrders,
   getDirectOffers,
   getOrderById,
+  acceptQuotation,
+selectAgentAfterQuotation,
+submitQuotation,
   // NEW ROUTES
   scheduleOrder,
   addReview,
   getCustomerServiceHistory,
   getAgentServiceHistory,
   getTodaysSchedule,
-  getUpcomingSchedule
+  getUpcomingSchedule,
+  createProfessionalOrder 
 } from '../controllers/orderController.js';
 import { authGuard, requireRoles } from '../middlewares/auth.js';
 import { ROLES } from '../constants/roles.js';
 
 const router = express.Router();
 
-// Customer routes
+/// Customer routes
 router.post('/', authGuard, requireRoles(ROLES.CUSTOMER), createOrder);
 router.get('/my-orders', authGuard, requireRoles(ROLES.CUSTOMER), getCustomerOrders);
 router.get('/history', authGuard, requireRoles(ROLES.CUSTOMER), getCustomerServiceHistory);
 router.patch('/:id/review', authGuard, requireRoles(ROLES.CUSTOMER), addReview);
-
+router.post('/professional',authGuard, requireRoles(ROLES.CUSTOMER),createProfessionalOrder);
+// Add this route with other customer routes
+router.patch('/:id/select-agent', authGuard, requireRoles(ROLES.CUSTOMER), selectAgentAfterQuotation);
 // Agent routes
 router.get('/direct-offers', authGuard, requireRoles(ROLES.AGENT), getDirectOffers);
 router.get('/public-orders', authGuard, requireRoles(ROLES.AGENT), getPublicOrders);
@@ -42,6 +48,11 @@ router.patch('/:id/reject-direct', authGuard, requireRoles(ROLES.AGENT), rejectO
 router.patch('/:id/accept-public', authGuard, requireRoles(ROLES.AGENT), acceptPublicOrder);
 router.patch('/:id/status', authGuard, requireRoles(ROLES.AGENT), updateStatus);
 router.patch('/:id/schedule', authGuard, requireRoles(ROLES.AGENT), scheduleOrder);
+
+// Company/Admin routes
+// Add these routes (probably in admin/company routes)
+router.patch('/:id/submit-quotation', authGuard, requireRoles([ROLES.ADMIN, ROLES.REPRESENTATIVE]), submitQuotation);
+router.patch('/:id/accept-quotation', authGuard, requireRoles(ROLES.CUSTOMER), acceptQuotation);
 
 // Shared
 router.get('/:id', authGuard, getOrderById);

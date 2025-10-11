@@ -253,3 +253,41 @@ export const getAvailableAgents = async (req, res, next) => {
     next(e);
   }
 };
+// Add this to your agent controller
+export const getAgentsForProfessionalService = async (req, res, next) => {
+  try {
+    const { categoryId, serviceType } = req.query;
+    
+    let query = { 
+      isVerified: true,
+      availability: 'available'
+    };
+
+    // Filter by service category
+    if (categoryId) {
+      query.services = categoryId;
+    }
+
+    // Filter by service type
+    if (serviceType) {
+      query.serviceType = new RegExp(serviceType, 'i');
+    }
+
+    const agents = await AgentProfile.find(query)
+      .populate('user', 'fullName email phone profileImage')
+      .populate('services', 'name description')
+      .sort({ rating: -1, completedJobs: -1 }) // Sort by rating and experience
+      .limit(10); // Limit to top 10 agents
+
+    res.json({
+      success: true,
+      agents: agents,
+      count: agents.length,
+      message: `Found ${agents.length} professional agents`
+    });
+
+  } catch (e) {
+    console.error('Error fetching professional agents:', e);
+    next(e);
+  }
+};
