@@ -906,47 +906,79 @@ export const getUpcomingSchedule = async (req, res) => {
   }
 };
 
-export const createProfessionalOrder = async (req, res) => {
+
+
+// NEW: Customer selects agent after accepting quotation
+export const selectAgentAfterQuotation = async (req, res) => {
   try {
-    const { serviceCategory, details, location, ...orderData } = req.body;
+    const { agentId } = req.body;
 
-    const order = new Order({
-      ...orderData,
-      customer: req.user.id,
-      serviceCategory,
-      details,
-      location,
-      orderType: 'professional',
-      status: 'requested',
-      paymentStatus: 'pending'
-    });
-
-    order.timeline.push({
-      status: 'requested',
-      note: 'Professional service requested. Waiting for representative inspection and quotation.'
-    });
-
-    await order.save();
-    await order.populate('serviceCategory', 'name description');
-
-    // Notify admin/representatives about new professional order
-    // You might want to notify all representatives here
-    if (req.io) {
-      req.io.emit('new_professional_order', {
-        type: 'PROFESSIONAL_ORDER_CREATED',
-        data: {
-          orderId: order._id,
-          serviceCategory: order.serviceCategory.name,
-          customerName: req.user.fullName,
-          location: order.location
-        }
+    const order = await Order.findById(req.params.id);
+    if (!order) {
+      return res.status(404).json({ 
+        success: false,
+        error: 'Order not found' 
       });
     }
 
-    res.status(201).json({
+    // Check if order is in the correct state
+    if (order.status !== 'quotation_accepted') {
+      return res.status(400).json({
+        success: false,
+        error: 'Quotation must be accepted before selecting an agent'
+      });
+    }
+
+    // Validate agent is in recommended agents (optional)
+    if (order.recommendedAgents && order.recommendedAgents.length > 0) {
+      const isRecommended = order.recommendedAgents.some(
+        recAgent => recAgent.toString() === agentId
+      );
+      
+      if (!isRecommended) {
+        return res.status(400).json({
+          success: false,
+          error: 'Selected agent is not in the recommended list'
+        });
+      }
+    }
+
+    // Assign the selected agent
+    order.agent = agentId;
+    order.status = 'agent_selected';
+    
+    order.timeline.push({
+      status: 'agent_selected',
+      note: `Customer selected agent for the service`
+    });
+
+    await order.save();
+
+    // Populate for response
+    await order.populate('agent', 'fullName email phone');
+    await order.populate('customer', 'fullName email phone');
+
+    // Notify the selected agent
+    await notifyUser(
+      agentId,
+      'AGENT_SELECTED_FOR_QUOTATION',
+      [order._id, order.customer.fullName, order.quotationAmount],
+      req.io
+    );
+
+    // Notify customer
+    await notifyUser(
+      order.customer._id,
+      'AGENT_SELECTED_CONFIRMED',
+      [order._id, order.agent.fullName],
+      req.io
+    );
+
+    res.json({
       success: true,
-      message: 'Professional service request created. A representative will contact you for inspection and quotation.',
-      order
+      message: 'Agent selected successfully. Order is now ready to proceed.',
+      order,
+      nextStep: 'scheduling' // Frontend knows to proceed to scheduling
     });
   } catch (err) {
     res.status(500).json({ 
@@ -955,4 +987,3 @@ export const createProfessionalOrder = async (req, res) => {
     });
   }
 };
-
