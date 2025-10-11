@@ -95,7 +95,8 @@ export const login = async (req, res, next) => {
     const token = issueToken({
       id: user._id,
       role: user.role,
-      name: user.fullName
+      name: user.fullName,
+      email: user.email,
     });
 
     res.json({
