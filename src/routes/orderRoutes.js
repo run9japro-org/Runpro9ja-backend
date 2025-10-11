@@ -21,7 +21,6 @@ submitQuotation,
   getAgentServiceHistory,
   getTodaysSchedule,
   getUpcomingSchedule,
-  createProfessionalOrder 
 } from '../controllers/orderController.js';
 import { authGuard, requireRoles } from '../middlewares/auth.js';
 import { ROLES } from '../constants/roles.js';
@@ -33,7 +32,6 @@ router.post('/', authGuard, requireRoles(ROLES.CUSTOMER), createOrder);
 router.get('/my-orders', authGuard, requireRoles(ROLES.CUSTOMER), getCustomerOrders);
 router.get('/history', authGuard, requireRoles(ROLES.CUSTOMER), getCustomerServiceHistory);
 router.patch('/:id/review', authGuard, requireRoles(ROLES.CUSTOMER), addReview);
-router.post('/professional',authGuard, requireRoles(ROLES.CUSTOMER),createProfessionalOrder);
 // Add this route with other customer routes
 router.patch('/:id/select-agent', authGuard, requireRoles(ROLES.CUSTOMER), selectAgentAfterQuotation);
 // Agent routes
