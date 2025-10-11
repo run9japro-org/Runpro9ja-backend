@@ -1,24 +1,25 @@
 import express from "express";
 import {
   requestWithdrawal,
-  withdrawalWebhook,
+  approveWithdrawal,
   getMyWithdrawals,
-  getMyWalletBalance,
+  getAllWithdrawals,
+  handlePaystackWebhook,
 } from "../controllers/withdrawalController.js";
-import { authGuard, isAgent } from "../middlewares/auth.js"; // ✅ fix path
+
+import { authGuard, requireAdmin, isAgent } from "../middlewares/auth.js";
 
 const router = express.Router();
 
-// Agent requests withdrawal
-router.post("/", authGuard, isAgent, requestWithdrawal);
+// ✅ Agent routes
+router.post("/request", authGuard, isAgent, requestWithdrawal);
+router.get("/my", authGuard, isAgent, getMyWithdrawals);
 
-// Agent views withdrawal history
-router.get("/me", authGuard, isAgent, getMyWithdrawals);
+// ✅ Admin routes
+router.get("/", authGuard, requireAdmin, getAllWithdrawals);
+router.post("/:id/approve", authGuard, requireAdmin, approveWithdrawal);
 
-// Agent checks wallet balance
-router.get("/balance", authGuard, isAgent, getMyWalletBalance);
-
-// Paystack webhook (public, but verify signature in controller)
-router.post("/webhook", express.json({ type: "*/*" }), withdrawalWebhook);
+// ✅ Webhook (no auth)
+router.post("/webhook/paystack", handlePaystackWebhook);
 
 export default router;

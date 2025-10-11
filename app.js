@@ -9,6 +9,8 @@ import { env } from "./src/config/env.js";
 import { errorHandler, notFound } from "./src/middlewares/errorHandler.js";
 import path from "path"; // ✅ ADD THIS IMPORT
 // ✅ Routes
+
+import { handleWebhook } from "./src/controllers/paymentController.js";
 import authRoutes from "./src/routes/authRoutes.js";
 import serviceRoutes from "./src/routes/serviceRoutes.js";
 import agentRoutes from "./src/routes/agentRoutes.js";
@@ -42,6 +44,9 @@ app.use(
   legacyHeaders: false,
   })
 );
+
+// ✅ But the webhook route must come BEFORE express.json
+app.post("/api/payments/webhook", express.raw({ type: "application/json" }), handleWebhook);
 app.use(express.json({ limit: "1mb" }));
 app.use(cors({ origin: env.clientOrigin, credentials: true }));
 app.use(morgan("dev"));
@@ -62,10 +67,10 @@ app.use('/api/customers', customerRoutes);
 app.use("/uploads", express.static(path.join(process.cwd(), "uploads")));
 // app.use("/api/profile", profileRoutes);
 app.use("/api/payments", paymentRoutes);
-// app.use("/api/withdrawals", withdrawalRoutes);
 app.use("/api/chat", chatRoutes);
 app.use("/api/notifications", notificationRoutes);
 app.use("/api/admin", adminRoutes);
+app.use("/api/withdrawals", withdrawalRoutes);
 
 // ✅ Error handlers
 app.use(notFound);

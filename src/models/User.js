@@ -37,6 +37,7 @@ bankAccount: {
   bankName: String,
   accountNumber: String,
   accountName: String,
+  bankCode: { type: String },   
   recipientCode: String, // Paystack recipient code after verification
 },
 // Verification

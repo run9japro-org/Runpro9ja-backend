@@ -113,6 +113,51 @@ ORDER_SCHEDULED: (orderId, date, time) => ({
   data: { orderId, date, time },
   actionUrl: `/orders/${orderId}`
 }),
+// --- Withdrawal Notifications ---
+WITHDRAWAL_REQUESTED: (amount) => ({
+  title: "Withdrawal Request Submitted",
+  message: `Your withdrawal request of ₦${amount} has been submitted and is pending admin approval.`,
+  type: "withdrawal",
+  priority: "medium",
+  data: { amount },
+  actionUrl: "/agent/withdrawals"
+}),
+
+WITHDRAWAL_APPROVED: (amount) => ({
+  title: "Withdrawal Approved",
+  message: `Your withdrawal request of ₦${amount} has been approved. The funds are being processed.`,
+  type: "withdrawal",
+  priority: "high",
+  data: { amount },
+  actionUrl: "/agent/withdrawals"
+}),
+
+WITHDRAWAL_COMPLETED: (amount) => ({
+  title: "Withdrawal Completed",
+  message: `Your withdrawal of ₦${amount} has been successfully transferred to your bank account.`,
+  type: "withdrawal",
+  priority: "high",
+  data: { amount },
+  actionUrl: "/agent/withdrawals"
+}),
+
+WITHDRAWAL_FAILED: (amount) => ({
+  title: "Withdrawal Failed",
+  message: `Your withdrawal of ₦${amount} could not be processed. Please contact support.`,
+  type: "withdrawal",
+  priority: "urgent",
+  data: { amount },
+  actionUrl: "/agent/withdrawals"
+}),
+
+NEW_WITHDRAWAL_REQUEST_ADMIN: (agentName, amount) => ({
+  title: "New Withdrawal Request",
+  message: `${agentName} requested a withdrawal of ₦${amount}.`,
+  type: "admin_alert",
+  priority: "high",
+  data: { agentName, amount },
+  actionUrl: "/admin/withdrawals"
+}),
 
 ORDER_SCHEDULED_AGENT: (orderId, date, time) => ({
   title: 'Order Scheduled',
