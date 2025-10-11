@@ -34,9 +34,21 @@ export const createPayment = async (req, res) => {
 };
 
 // Webhook (Paystack → server)
+
 export const handleWebhook = async (req, res) => {
   try {
-    // Paystack sends events in req.body
+    const secret = process.env.PAYSTACK_SECRET_KEY;
+
+    // Verify Paystack signature
+    const hash = crypto
+      .createHmac('sha512', secret)
+      .update(JSON.stringify(req.body))
+      .digest('hex');
+
+    if (hash !== req.headers['x-paystack-signature']) {
+      return res.status(401).send('Invalid signature');
+    }
+
     const event = req.body;
 
     if (event.event !== 'charge.success') {
@@ -55,7 +67,7 @@ export const handleWebhook = async (req, res) => {
     if (payment && verification.status === 'success') {
       // Increment agent wallet balance
       await User.findByIdAndUpdate(payment.agent, {
-        $inc: { walletBalance: verification.amount }
+        $inc: { walletBalance: verification.amount },
       });
 
       notifyUser(payment.agent, `Payment received: ₦${verification.amount} for Order ${payment.order}`);
@@ -66,7 +78,6 @@ export const handleWebhook = async (req, res) => {
     res.status(500).json({ error: err.message });
   }
 };
-
 // Logged-in user payment history
 export const getMyPayments = async (req, res) => {
   try {
