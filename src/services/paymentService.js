@@ -18,6 +18,7 @@ export const initializePayment = async ({ amount, email }) => {
       }
     }
   );
+console.log('Using Paystack Key:', PAYSTACK_SECRET_KEY);
 
   return {
     authorizationUrl: response.data.data.authorization_url,
