@@ -1,5 +1,6 @@
-// models/Order.js
+// models/Order.js - UPDATED VERSION
 import mongoose from 'mongoose';
+
 // In models/Order.js - update the status enum
 const statusSchema = new mongoose.Schema({
   status: { 
@@ -32,7 +33,14 @@ const orderSchema = new mongoose.Schema({
   price: { type: Number },
   location: { type: String },
   
-   orderType: {
+  // NEW: Service Scale Field
+  serviceScale: {
+    type: String,
+    enum: ['minimum', 'large_scale'],
+    default: 'minimum'
+  },
+  
+  orderType: {
     type: String,
     enum: ['normal', 'professional'],
     default: 'normal'
@@ -97,5 +105,6 @@ orderSchema.index({ customer: 1, status: 1 });
 orderSchema.index({ agent: 1, status: 1 });
 orderSchema.index({ scheduledDate: 1 });
 orderSchema.index({ status: 1 });
+orderSchema.index({ serviceScale: 1 }); // NEW: Index for service scale
 
 export default mongoose.model('Order', orderSchema);

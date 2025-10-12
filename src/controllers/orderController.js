@@ -2,10 +2,18 @@ import Order from '../models/Order.js';
 import { notifyUser } from '../services/notificationService.js';
 
 // Step 1: Customer creates order with selected agent
-// Step 1: Customer creates order with selected agent - FIXED VERSION
+// In your orderController.js - UPDATED createOrder function
 export const createOrder = async (req, res) => {
   try {
-    const { requestedAgent, orderType = 'normal', serviceCategory, details, location, ...orderData } = req.body;
+    const { 
+      requestedAgent, 
+      orderType = 'normal', 
+      serviceCategory, 
+      details, 
+      location, 
+      serviceScale = 'minimum', // ADD THIS - default to minimum
+      ...orderData 
+    } = req.body;
 
     // Validate required fields for professional orders
     if (orderType === 'professional') {
@@ -29,27 +37,43 @@ export const createOrder = async (req, res) => {
       }
     }
 
+    // Determine initial status based on service scale
+    let initialStatus;
+    let timelineNote;
+
+    if (orderType === 'professional') {
+      if (serviceScale === 'minimum') {
+        // For minimum scale: go directly to agent selection
+        initialStatus = 'requested';
+        timelineNote = 'Minimum scale service requested. Ready for agent selection.';
+      } else {
+        // For large scale: representative inspection flow (your existing flow)
+        initialStatus = 'requested';
+        timelineNote = 'Large scale service requested. Representative will inspect before quotation.';
+      }
+    } else {
+      // Normal orders
+      initialStatus = 'pending_agent_response';
+      timelineNote = 'Waiting for agent response.';
+    }
+
     const order = new Order({
       ...orderData,
       customer: req.user.id,
       requestedAgent: requestedAgent || null,
       orderType,
+      serviceScale, // ADD THIS FIELD
       // Include professional order fields
       serviceCategory: serviceCategory || orderData.serviceCategory,
       details: details || orderData.details,
       location: location || orderData.location,
-      status: orderType === 'professional'
-        ? 'requested' // Changed from 'inspection_scheduled' to 'requested'
-        : 'pending_agent_response',
+      status: initialStatus,
       paymentStatus: 'pending'
     });
 
     order.timeline.push({
-      status: 'requested',
-      note:
-        orderType === 'professional'
-          ? 'Professional service requested. Representative will inspect before quotation.'
-          : 'Waiting for agent response.'
+      status: initialStatus,
+      note: timelineNote
     });
 
     await order.save();
@@ -63,24 +87,42 @@ export const createOrder = async (req, res) => {
       req.io
     );
 
-    // For professional orders, notify representatives
+    // For professional orders, notify based on service scale
     if (orderType === 'professional' && req.io) {
-      req.io.emit('new_professional_order', {
-        type: 'PROFESSIONAL_ORDER_CREATED',
-        data: {
-          orderId: order._id,
-          serviceCategory: order.serviceCategory?.name || 'Professional Service',
-          customerName: req.user.fullName,
-          location: order.location
-        }
-      });
+      if (serviceScale === 'large_scale') {
+        // Notify representatives for large scale
+        req.io.emit('new_professional_order', {
+          type: 'PROFESSIONAL_ORDER_CREATED',
+          data: {
+            orderId: order._id,
+            serviceCategory: order.serviceCategory?.name || 'Professional Service',
+            customerName: req.user.fullName,
+            location: order.location,
+            serviceScale: 'large_scale'
+          }
+        });
+      } else {
+        // For minimum scale, notify available agents directly
+        req.io.emit('new_minimum_scale_order', {
+          type: 'MINIMUM_SCALE_ORDER_CREATED',
+          data: {
+            orderId: order._id,
+            serviceCategory: order.serviceCategory?.name || 'Professional Service',
+            customerName: req.user.fullName,
+            location: order.location,
+            serviceScale: 'minimum'
+          }
+        });
+      }
     }
 
     res.status(201).json({
       success: true,
       message:
         orderType === 'professional'
-          ? 'Professional service request created. A representative will contact you for inspection and quotation.'
+          ? serviceScale === 'minimum'
+            ? 'Minimum scale service requested. You can now select an agent.'
+            : 'Large scale service requested. A representative will contact you for inspection and quotation.'
           : 'Order created successfully. Waiting for agent response.',
       order
     });
@@ -88,7 +130,7 @@ export const createOrder = async (req, res) => {
     console.error('Error creating order:', err);
     res.status(500).json({ success: false, error: err.message });
   }
-};
+}
 
 export const submitQuotation = async (req, res) => {
   try {
@@ -1005,5 +1047,79 @@ export const getProfessionalOrders = async (req, res) => {
     });
   } catch (err) {
     res.status(500).json({ success: false, error: err.message });
+  }
+};
+
+// NEW: For minimum scale professional orders - direct agent selection
+export const selectAgentForMinimumScale = async (req, res) => {
+  try {
+    const { agentId } = req.body;
+
+    const order = await Order.findById(req.params.id);
+    if (!order) {
+      return res.status(404).json({ 
+        success: false,
+        error: 'Order not found' 
+      });
+    }
+
+    // Validate this is a minimum scale professional order
+    if (order.orderType !== 'professional' || order.serviceScale !== 'minimum') {
+      return res.status(400).json({
+        success: false,
+        error: 'This order is not eligible for direct agent selection'
+      });
+    }
+
+    // Validate order is in correct status
+    if (order.status !== 'requested') {
+      return res.status(400).json({
+        success: false,
+        error: 'Order is not in the correct status for agent selection'
+      });
+    }
+
+    // Assign the agent directly
+    order.agent = agentId;
+    order.status = 'agent_selected';
+    
+    order.timeline.push({
+      status: 'agent_selected',
+      note: `Agent selected for minimum scale service`
+    });
+
+    await order.save();
+
+    // Populate for response
+    await order.populate('agent', 'fullName email phone');
+    await order.populate('customer', 'fullName email phone');
+
+    // Notify the selected agent
+    await notifyUser(
+      agentId,
+      'AGENT_SELECTED_MINIMUM_SCALE',
+      [order._id, order.customer.fullName],
+      req.io
+    );
+
+    // Notify customer
+    await notifyUser(
+      order.customer._id,
+      'AGENT_SELECTED_MINIMUM_CONFIRMED',
+      [order._id, order.agent.fullName],
+      req.io
+    );
+
+    res.json({
+      success: true,
+      message: 'Agent selected successfully. You can now proceed to scheduling and payment.',
+      order,
+      nextStep: 'scheduling' // Frontend knows to proceed to scheduling
+    });
+  } catch (err) {
+    res.status(500).json({ 
+      success: false,
+      error: err.message 
+    });
   }
 };

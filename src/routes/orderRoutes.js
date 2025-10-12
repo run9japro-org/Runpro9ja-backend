@@ -18,6 +18,7 @@ getProfessionalOrders,
   // NEW ROUTES
   scheduleOrder,
   addReview,
+  selectAgentForMinimumScale,
   getCustomerServiceHistory,
   getAgentServiceHistory,
   getTodaysSchedule,
@@ -33,8 +34,9 @@ router.post('/', authGuard, requireRoles(ROLES.CUSTOMER), createOrder);
 router.get('/my-orders', authGuard, requireRoles(ROLES.CUSTOMER), getCustomerOrders);
 router.get('/history', authGuard, requireRoles(ROLES.CUSTOMER), getCustomerServiceHistory);
 router.patch('/:id/review', authGuard, requireRoles(ROLES.CUSTOMER), addReview);
-// Add this route with other customer routes
+
 router.patch('/:id/select-agent', authGuard, requireRoles(ROLES.CUSTOMER), selectAgentAfterQuotation);
+router.patch('/:id/select-agent-minimum', authGuard, selectAgentForMinimumScale);
 // Agent routes
 router.get('/direct-offers', authGuard, requireRoles(ROLES.AGENT), getDirectOffers);
 router.get('/public-orders', authGuard, requireRoles(ROLES.AGENT), getPublicOrders);
