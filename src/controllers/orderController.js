@@ -987,3 +987,23 @@ export const selectAgentAfterQuotation = async (req, res) => {
     });
   }
 };
+
+export const getProfessionalOrders = async (req, res) => {
+  try {
+    const orders = await Order.find({
+      orderType: 'professional',
+      status: 'requested' // Only show orders waiting for quotation
+    })
+      .populate('customer', 'fullName email phone')
+      .populate('serviceCategory', 'name description')
+      .sort({ createdAt: -1 });
+
+    res.json({
+      success: true,
+      orders,
+      count: orders.length
+    });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+};

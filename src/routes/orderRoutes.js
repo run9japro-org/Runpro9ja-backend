@@ -14,6 +14,7 @@ import {
   acceptQuotation,
 selectAgentAfterQuotation,
 submitQuotation,
+getProfessionalOrders,
   // NEW ROUTES
   scheduleOrder,
   addReview,
@@ -49,7 +50,8 @@ router.patch('/:id/schedule', authGuard, requireRoles(ROLES.AGENT), scheduleOrde
 
 // Company/Admin routes
 // Add these routes (probably in admin/company routes)
-router.patch('/:id/submit-quotation', authGuard, requireRoles([ROLES.ADMIN, ROLES.REPRESENTATIVE]), submitQuotation);
+router.get('/professional', authGuard, requireRoles([ROLES.REPRESENTATIVE]), getProfessionalOrders);
+router.patch('/:id/submit-quotation', authGuard, requireRoles( ROLES.REPRESENTATIVE), submitQuotation);
 router.patch('/:id/accept-quotation', authGuard, requireRoles(ROLES.CUSTOMER), acceptQuotation);
 
 // Shared
