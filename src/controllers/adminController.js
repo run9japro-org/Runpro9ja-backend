@@ -2,8 +2,8 @@
 import bcrypt from 'bcrypt';
 import crypto from 'crypto';
 import { User } from '../models/User.js';
-import { Agent } from '../models/Agent.js';
-import { Order } from '../models/Order.js';
+import { AgentProfile } from '../models/AgentProfile.js'; // Updated import
+import  Order  from '../models/Order.js';
 import { Payment } from '../models/Payment.js';
 import { sendEmail } from '../services/emailService.js';
 import { ROLES } from '../constants/roles.js';
@@ -154,7 +154,7 @@ export const getCompanyAnalytics = async (req, res, next) => {
 
     // Get total counts
     const totalUsers = await User.countDocuments();
-    const totalAgents = await Agent.countDocuments();
+    const totalAgents = await AgentProfile.countDocuments();
     const totalOrders = await Order.countDocuments();
     const totalRevenue = await Payment.aggregate([
       { $match: { status: 'success' } },
@@ -163,7 +163,7 @@ export const getCompanyAnalytics = async (req, res, next) => {
 
     // Get period-specific data
     const newUsers = await User.countDocuments({ createdAt: { $gte: startDate } });
-    const newAgents = await Agent.countDocuments({ createdAt: { $gte: startDate } });
+    const newAgents = await AgentProfile.countDocuments({ createdAt: { $gte: startDate } });
     const periodOrders = await Order.countDocuments({ createdAt: { $gte: startDate } });
     const periodRevenue = await Payment.aggregate([
       { $match: { status: 'success', createdAt: { $gte: startDate } } },
@@ -235,22 +235,23 @@ export const getAllAgents = async (req, res, next) => {
     const skip = (page - 1) * limit;
 
     let query = {};
-    if (status) query.status = status;
+    if (status) query.verificationStatus = status;
     if (search) {
       query.$or = [
-        { 'user.fullName': { $regex: search, $options: 'i' } },
+        { bio: { $regex: search, $options: 'i' } },
         { serviceType: { $regex: search, $options: 'i' } },
-        { 'user.email': { $regex: search, $options: 'i' } }
+        { summary: { $regex: search, $options: 'i' } }
       ];
     }
 
-    const agents = await Agent.find(query)
+    const agents = await AgentProfile.find(query)
       .populate('user', 'fullName email phone profileImage')
+      .populate('services')
       .sort({ createdAt: -1 })
       .skip(skip)
       .limit(parseInt(limit));
 
-    const total = await Agent.countDocuments(query);
+    const total = await AgentProfile.countDocuments(query);
 
     res.json({
       success: true,
@@ -278,11 +279,13 @@ export const verifyAgent = async (req, res, next) => {
     const { id } = req.params;
     const { status, notes } = req.body; // status: 'verified', 'rejected', 'pending'
 
-    const agent = await Agent.findById(id);
+    const agent = await AgentProfile.findById(id);
     if (!agent) return res.status(404).json({ message: 'Agent not found' });
 
+    // Add verification fields to AgentProfile
+    agent.isVerified = status === 'verified';
     agent.verificationStatus = status;
-    agent.verificationNotes = notes;
+    agent.verificationNotes = notes || '';
     agent.verifiedAt = status === 'verified' ? new Date() : null;
     agent.verifiedBy = requester.id;
 
@@ -480,14 +483,6 @@ export const getComplaints = async (req, res, next) => {
     let query = {};
     if (status) query.status = status;
     if (type) query.type = type;
-
-    // Assuming you have a Complaint model
-    // const complaints = await Complaint.find(query)
-    //   .populate('user', 'fullName email phone')
-    //   .populate('relatedOrder')
-    //   .sort({ createdAt: -1 })
-    //   .skip(skip)
-    //   .limit(parseInt(limit));
 
     // For now, return empty array until Complaint model is created
     const complaints = [];

@@ -1,3 +1,4 @@
+// models/AgentProfile.js
 import mongoose from 'mongoose';
 
 const AgentProfileSchema = new mongoose.Schema({
@@ -13,18 +14,37 @@ const AgentProfileSchema = new mongoose.Schema({
   summary: { type: String },
   
   // ✅ Service-specific fields
-  servicesOffered: { type: String }, // Used by Errand, Professional, Cleaning
-  areasOfExpertise: { type: String }, // Used by Errand
-  tasksHandled: { type: String }, // Used by Personal Assistance
-  skills: { type: String }, // Used by Personal Assistance & Babysitting
-  certification: { type: String }, // Used by Professional
-  subCategory: { type: String }, // Used by Professional
-  ageRange: { type: String }, // Used by Babysitting
-  tools: { type: String }, // Used by Cleaning
+  servicesOffered: { type: String },
+  areasOfExpertise: { type: String },
+  tasksHandled: { type: String },
+  skills: { type: String },
+  certification: { type: String },
+  subCategory: { type: String },
+  ageRange: { type: String },
+  tools: { type: String },
   
   rating: { type: Number, default: 0 },
   completedJobs: { type: Number, default: 0 },
   isVerified: { type: Boolean, default: false },
+  
+  // ✅ ADD THESE VERIFICATION FIELDS
+  verificationStatus: {
+    type: String,
+    enum: ['pending', 'verified', 'rejected'],
+    default: 'pending'
+  },
+  verificationNotes: {
+    type: String,
+    default: ''
+  },
+  verifiedBy: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'User'
+  },
+  verifiedAt: {
+    type: Date
+  },
+  
   documents: [String],
   location: {
     city: String,
