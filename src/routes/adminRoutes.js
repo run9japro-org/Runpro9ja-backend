@@ -1,30 +1,53 @@
 // routes/adminRoutes.js
-import { Router } from 'express';
+import express from 'express';
+import { authGuard } from '../middlewares/auth.js';
 import {
   createAdmin,
   resetAdminPassword,
   changeMyPassword,
   listAdmins,
-  deleteAdmin
+  deleteAdmin,
+  deleteUserAccount,
+  getCompanyAnalytics,
+  getAllAgents,
+  verifyAgent,
+  getAllServiceRequests,
+  getAllEmployees,
+  getPaymentDetails,
+  getComplaints
 } from '../controllers/adminController.js';
-import { authGuard, requireRoles } from '../middlewares/auth.js';
-import { ROLES } from '../constants/roles.js';
 
-const router = Router();
+const router = express.Router();
 
-// Create admin (super admin or admin head)
-router.post('/', authGuard, requireRoles(ROLES.SUPER_ADMIN, ROLES.ADMIN_HEAD), createAdmin);
+// Admin management (Super Admin & Admin Head only)
+router.post('/', authGuard, createAdmin);
+router.get('/', authGuard, listAdmins);
+router.delete('/:id', authGuard, deleteAdmin);
+router.put('/:id/reset-password', authGuard, resetAdminPassword);
 
-// List admins
-router.get('/', authGuard, requireRoles(ROLES.SUPER_ADMIN, ROLES.ADMIN_HEAD), listAdmins);
+// Account management (Super Admin & Admin Head only)
+router.delete('/accounts/:id', authGuard, deleteUserAccount);
 
-// Delete admin (only super admin)
-router.delete('/:id', authGuard, requireRoles(ROLES.SUPER_ADMIN), deleteAdmin);
+// Analytics (Super Admin, Admin Head, Admin Agent Service)
+router.get('/analytics/summary', authGuard, getCompanyAnalytics);
 
-// Reset another admin password (super/admin head)
-router.put('/:id/reset-password', authGuard, requireRoles(ROLES.SUPER_ADMIN, ROLES.ADMIN_HEAD), resetAdminPassword);
+// Agent management (Super Admin, Admin Head, Admin Agent Service)
+router.get('/agents', authGuard, getAllAgents);
+router.put('/agents/:id/verify', authGuard, verifyAgent);
 
-// Change own password (any admin or user)
+// Service requests (All admins except specific restrictions)
+router.get('/service-requests', authGuard, getAllServiceRequests);
+
+// Employee management (Super Admin & Admin Head only)
+router.get('/employees', authGuard, getAllEmployees);
+
+// Payment management (Super Admin & Admin Head only)
+router.get('/payments', authGuard, getPaymentDetails);
+
+// Complaint management (Super Admin, Admin Head, Admin Customer Service)
+router.get('/complaints', authGuard, getComplaints);
+
+// Self-management
 router.put('/me/change-password', authGuard, changeMyPassword);
 
 export default router;
