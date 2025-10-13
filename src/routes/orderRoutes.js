@@ -1,4 +1,4 @@
-// routes/orderRoutes.js
+// routes/orderRoutes.js - FINAL VERSION
 import express from 'express';
 import {
   createOrder,
@@ -10,12 +10,11 @@ import {
   getAgentOrders,
   getPublicOrders,
   getDirectOffers,
-  getOrderById,
+  getOrderById, // MAKE SURE THIS IS IMPORTED
   acceptQuotation,
-selectAgentAfterQuotation,
-submitQuotation,
-getProfessionalOrders,
-  // NEW ROUTES
+  selectAgentAfterQuotation,
+  submitQuotation,
+  getProfessionalOrders,
   scheduleOrder,
   addReview,
   selectAgentForMinimumScale,
@@ -29,15 +28,16 @@ import { ROLES } from '../constants/roles.js';
 
 const router = express.Router();
 
-/// Customer routes
+// ============ CUSTOMER ROUTES ============
 router.post('/', authGuard, requireRoles(ROLES.CUSTOMER), createOrder);
 router.get('/my-orders', authGuard, requireRoles(ROLES.CUSTOMER), getCustomerOrders);
 router.get('/history', authGuard, requireRoles(ROLES.CUSTOMER), getCustomerServiceHistory);
 router.patch('/:id/review', authGuard, requireRoles(ROLES.CUSTOMER), addReview);
-
 router.patch('/:id/select-agent', authGuard, requireRoles(ROLES.CUSTOMER), selectAgentAfterQuotation);
-router.patch('/:id/select-agent-minimum', authGuard, selectAgentForMinimumScale);
-// Agent routes
+router.patch('/:id/select-agent-minimum', authGuard, requireRoles(ROLES.CUSTOMER), selectAgentForMinimumScale);
+router.patch('/:id/accept-quotation', authGuard, requireRoles(ROLES.CUSTOMER), acceptQuotation);
+
+// ============ AGENT ROUTES ============
 router.get('/direct-offers', authGuard, requireRoles(ROLES.AGENT), getDirectOffers);
 router.get('/public-orders', authGuard, requireRoles(ROLES.AGENT), getPublicOrders);
 router.get('/agent/my-orders', authGuard, requireRoles(ROLES.AGENT), getAgentOrders);
@@ -50,13 +50,14 @@ router.patch('/:id/accept-public', authGuard, requireRoles(ROLES.AGENT), acceptP
 router.patch('/:id/status', authGuard, requireRoles(ROLES.AGENT), updateStatus);
 router.patch('/:id/schedule', authGuard, requireRoles(ROLES.AGENT), scheduleOrder);
 
-// Company/Admin routes
-// Add these routes (probably in admin/company routes)
-router.get('/professional', authGuard, requireRoles([ROLES.REPRESENTATIVE]), getProfessionalOrders);
-router.patch('/:id/submit-quotation', authGuard, requireRoles( ROLES.REPRESENTATIVE), submitQuotation);
-router.patch('/:id/accept-quotation', authGuard, requireRoles(ROLES.CUSTOMER), acceptQuotation);
+// ============ COMPANY/REPRESENTATIVE ROUTES ============
+router.get('/professional', authGuard, requireRoles([ROLES.REPRESENTATIVE, ROLES.ADMIN]), getProfessionalOrders);
+router.patch('/:id/submit-quotation', authGuard, requireRoles([ROLES.REPRESENTATIVE, ROLES.ADMIN]), submitQuotation);
 
-// Shared
-router.get('/:id', authGuard, getOrderById);
+// ============ SHARED ROUTES ============
+// GET ORDER BY ID - Accessible by customers, agents, and representatives
+router.get('/:id', authGuard, requireRoles([ROLES.CUSTOMER, ROLES.AGENT, ROLES.REPRESENTATIVE, ROLES.ADMIN]), getOrderById);
+
+
 
 export default router;

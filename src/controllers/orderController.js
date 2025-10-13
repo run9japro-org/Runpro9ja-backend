@@ -518,33 +518,7 @@ export const getAgentOrders = async (req, res) => {
 };
 
 
-// Get order by ID
-export const getOrderById = async (req, res) => {
-  try {
-    const order = await Order.findById(req.params.id)
-      .populate('customer', 'fullName email phone')
-      .populate('agent', 'fullName email phone')
-      .populate('serviceCategory')
-      .populate('requestedAgent', 'fullName');
 
-    if (!order) {
-      return res.status(404).json({ 
-        success: false,
-        error: 'Order not found' 
-      });
-    }
-
-    res.json({
-      success: true,
-      order
-    });
-  } catch (err) {
-    res.status(500).json({ 
-      success: false,
-      error: err.message 
-    });
-  }
-};
 export const updateStatus = async (req, res) => {
   try {
     const { status, note } = req.body;
@@ -1120,6 +1094,124 @@ export const selectAgentForMinimumScale = async (req, res) => {
     res.status(500).json({ 
       success: false,
       error: err.message 
+    });
+  }
+};
+// controllers/orderController.js - ADD THIS METHOD
+export const getOrderById = async (req, res) => {
+  try {
+    const { id } = req.params;
+    
+    console.log(`🔍 Fetching order by ID: ${id}`);
+    console.log(`👤 Request user: ${req.user.id}, Role: ${req.user.role}`);
+
+    // Find the order and populate all necessary fields
+    const order = await Order.findById(id)
+      .populate('customer', 'fullName email phone profileImage')
+      .populate('agent', 'fullName email phone profileImage rating')
+      .populate('requestedAgent', 'fullName email phone')
+      .populate('serviceCategory', 'name description')
+      .populate('recommendedAgents', 'fullName email phone rating')
+      .populate('representative', 'fullName email phone')
+      .populate('declinedBy.agent', 'fullName');
+
+    if (!order) {
+      console.log(`❌ Order not found: ${id}`);
+      return res.status(404).json({
+        success: false,
+        error: 'Order not found'
+      });
+    }
+
+    // Authorization check - users can only see their own orders or orders they're involved with
+    const isCustomer = order.customer && order.customer._id.toString() === req.user.id;
+    const isAgent = order.agent && order.agent._id.toString() === req.user.id;
+    const isRequestedAgent = order.requestedAgent && order.requestedAgent._id.toString() === req.user.id;
+    const isRepresentative = req.user.role === ROLES.REPRESENTATIVE || req.user.role === ROLES.ADMIN;
+    
+    console.log(`🔐 Authorization check - Customer: ${isCustomer}, Agent: ${isAgent}, RequestedAgent: ${isRequestedAgent}, Representative: ${isRepresentative}`);
+
+    if (!isCustomer && !isAgent && !isRequestedAgent && !isRepresentative) {
+      console.log(`❌ User ${req.user.id} not authorized to view order ${id}`);
+      return res.status(403).json({
+        success: false,
+        error: 'You are not authorized to view this order'
+      });
+    }
+
+    console.log(`✅ Order found and user authorized: ${order._id}`);
+
+    // Format the response
+    const orderResponse = {
+      success: true,
+      order: {
+        _id: order._id,
+        orderType: order.orderType,
+        serviceType: order.serviceType,
+        serviceCategory: order.serviceCategory,
+        serviceScale: order.serviceScale,
+        details: order.details,
+        location: order.location,
+        price: order.price,
+        status: order.status,
+        paymentStatus: order.paymentStatus,
+        customer: order.customer,
+        agent: order.agent,
+        requestedAgent: order.requestedAgent,
+        isPublic: order.isPublic,
+        isDirectOffer: order.isDirectOffer,
+        
+        // Professional service fields
+        quotationDetails: order.quotationDetails,
+        quotationAmount: order.quotationAmount,
+        quotationProvidedAt: order.quotationProvidedAt,
+        recommendedAgents: order.recommendedAgents,
+        representative: order.representative,
+        
+        // Scheduling
+        scheduledDate: order.scheduledDate,
+        scheduledTime: order.scheduledTime,
+        estimatedDuration: order.estimatedDuration,
+        
+        // Timestamps
+        createdAt: order.createdAt,
+        updatedAt: order.updatedAt,
+        startedAt: order.startedAt,
+        completedAt: order.completedAt,
+        
+        // Timeline
+        timeline: order.timeline || [],
+        
+        // Delivery tracking (if applicable)
+        currentLocation: order.currentLocation,
+        deliveryUpdates: order.deliveryUpdates || [],
+        
+        // Reviews
+        rating: order.rating,
+        review: order.review,
+        reviewedAt: order.reviewedAt,
+        
+        // Additional fields
+        urgency: order.urgency,
+        declinedBy: order.declinedBy || []
+      }
+    };
+
+    res.json(orderResponse);
+
+  } catch (error) {
+    console.error('❌ Error fetching order by ID:', error);
+    
+    if (error.name === 'CastError') {
+      return res.status(400).json({
+        success: false,
+        error: 'Invalid order ID format'
+      });
+    }
+    
+    res.status(500).json({
+      success: false,
+      error: 'Internal server error while fetching order'
     });
   }
 };
