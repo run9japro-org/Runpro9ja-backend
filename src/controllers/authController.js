@@ -1,6 +1,6 @@
 import { User } from '../models/User.js';
 import { generateNumericOtp } from '../utils/generateOtp.js';
-import { sendOtpEmail } from '../services/otpService.js';
+import { sendOtpEmail,sendPasswordResetEmail } from '../services/emailService.js';
 import { issueToken } from '../middlewares/auth.js';
 import {randomBytes}  from "crypto";
 
