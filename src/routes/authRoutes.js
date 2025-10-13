@@ -5,9 +5,6 @@ import {
   register, 
   resendOtp, 
   verifyOtp,
-  googleAuth,
-  linkGoogleAccount,
-  unlinkGoogleAccount,
   forgotPassword,
   resetPassword
 } from '../controllers/authController.js';
