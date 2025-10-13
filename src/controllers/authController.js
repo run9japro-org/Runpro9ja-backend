@@ -5,27 +5,6 @@ import { issueToken } from '../middlewares/auth.js';
 
 const OTP_TTL_MINUTES = 10;
 
-// Generate and send OTP via Email only
-const setOtpForUser = async (user) => {
-  try {
-    const code = generateNumericOtp(6);
-    user.otpCode = code;
-    user.otpExpiresAt = new Date(Date.now() + OTP_TTL_MINUTES * 60 * 1000);
-    await user.save();
-
-    // Send OTP through email only
-    const emailResult = await sendEmailOtp({
-      to: user.email,
-      name: user.fullName,
-      code: code
-    });
-
-    return { email: emailResult };
-  } catch (error) {
-    console.error('Error in setOtpForUser:', error.message);
-    throw error;
-  }
-};
 
 // REGISTER USER
 export const register = async (req, res, next) => {
@@ -348,5 +327,153 @@ export const getMyServiceHistory = async (req, res) => {
       success: false,
       error: err.message 
     });
+  }
+};
+
+
+export const forgotPassword = async (req, res, next) => {
+  try {
+    const { email } = req.body;
+
+    if (!email) {
+      return res.status(400).json({
+        success: false,
+        message: 'Email is required'
+      });
+    }
+
+    console.log('🔐 Forgot password request for:', email);
+
+    const user = await User.findOne({ email });
+    if (!user) {
+      // Don't reveal if user exists or not for security
+      console.log('📧 Email not found (for security), but sending success response');
+      return res.json({
+        success: true,
+        message: 'If an account with that email exists, a reset link has been sent'
+      });
+    }
+
+    // Check if user uses Google auth only (no password)
+    if (user.googleId && !user.password) {
+      return res.status(400).json({
+        success: false,
+        message: 'This account uses Google authentication. Please sign in with Google.'
+      });
+    }
+
+    // Generate reset token
+    const resetToken = crypto.randomBytes(32).toString('hex');
+    const resetTokenExpiry = Date.now() + 3600000; // 1 hour
+
+    user.resetPasswordToken = resetToken;
+    user.resetPasswordExpires = resetTokenExpiry;
+    await user.save();
+
+    // Send email with reset link using your existing service
+    const resetUrl = `${env.client.url}/reset-password?token=${resetToken}`;
+    
+    const emailResult = await sendPasswordResetEmail({
+      to: user.email,
+      name: user.fullName,
+      resetUrl: resetUrl
+    });
+
+    if (!emailResult.success) {
+      console.error('❌ Failed to send password reset email');
+      // Still return success to user, but log the error
+    }
+
+    console.log('✅ Password reset email sent successfully to:', user.email);
+
+    res.json({
+      success: true,
+      message: 'If an account with that email exists, a reset link has been sent'
+    });
+
+  } catch (error) {
+    console.error('❌ Forgot password error:', error.message);
+    next(error);
+  }
+};
+
+// RESET PASSWORD
+export const resetPassword = async (req, res, next) => {
+  try {
+    const { token, newPassword } = req.body;
+
+    if (!token || !newPassword) {
+      return res.status(400).json({
+        success: false,
+        message: 'Token and new password are required'
+      });
+    }
+
+    if (newPassword.length < 6) {
+      return res.status(400).json({
+        success: false,
+        message: 'Password must be at least 6 characters long'
+      });
+    }
+
+    console.log('🔄 Processing password reset for token:', token.substring(0, 10) + '...');
+
+    // Find user by reset token and check expiry
+    const user = await User.findOne({
+      resetPasswordToken: token,
+      resetPasswordExpires: { $gt: Date.now() }
+    });
+
+    if (!user) {
+      console.log('❌ Invalid or expired reset token');
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid or expired reset token'
+      });
+    }
+
+    // Set new password and clear reset token
+    user.password = newPassword;
+    user.resetPasswordToken = undefined;
+    user.resetPasswordExpires = undefined;
+    await user.save();
+
+    console.log('✅ Password reset successfully for user:', user.email);
+
+    res.json({
+      success: true,
+      message: 'Password reset successfully. You can now login with your new password.'
+    });
+
+  } catch (error) {
+    console.error('❌ Reset password error:', error.message);
+    next(error);
+  }
+};
+
+// Update your existing OTP function to use the new email service
+const setOtpForUser = async (user) => {
+  try {
+    const code = generateNumericOtp(6);
+    user.otpCode = code;
+    user.otpExpiresAt = new Date(Date.now() + OTP_TTL_MINUTES * 60 * 1000);
+    await user.save();
+
+    // Send OTP through email using your existing service
+    const emailResult = await sendOtpEmail({
+      to: user.email,
+      name: user.fullName,
+      code: code
+    });
+
+    return { 
+      email: {
+        success: emailResult.success,
+        message: emailResult.success ? 'OTP sent successfully' : 'Failed to send OTP'
+      } 
+    };
+  } catch (error) {
+    console.error('Error in setOtpForUser:', error.message);
+    throw error;
   }
 };

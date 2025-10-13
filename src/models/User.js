@@ -31,6 +31,9 @@ lng: Number,
 isDefault: { type: Boolean, default: false }
 }
 ],
+ // Password reset
+  resetPasswordToken: String,
+  resetPasswordExpires: Date,
 
 walletBalance: { type: Number, default: 0 },   // running balance
 bankAccount: {
