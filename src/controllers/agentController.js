@@ -291,3 +291,33 @@ export const getAgentsForProfessionalService = async (req, res, next) => {
     next(e);
   }
 };
+export const updateAgentLocation = async (req, res) => {
+  try {
+    const { lat, lng } = req.body;
+    const userId = req.user.id; // from JWT token
+
+    if (!lat || !lng) {
+      return res.status(400).json({ message: "Latitude and Longitude required" });
+    }
+
+    const agent = await AgentProfile.findOneAndUpdate(
+      { user: userId },
+      { currentLocation: { lat, lng, lastUpdated: new Date() } },
+      { new: true }
+    );
+
+    if (!agent) return res.status(404).json({ message: "Agent not found" });
+
+    // ✅ Emit real-time update
+    req.io.emit("agentLocationUpdate", {
+      agentId: agent._id,
+      lat,
+      lng,
+    });
+
+    res.json({ success: true, message: "Location updated", agent });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ message: "Server error" });
+  }
+};

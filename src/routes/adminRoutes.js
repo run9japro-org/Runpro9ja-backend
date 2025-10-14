@@ -16,6 +16,7 @@ import {
   getPaymentDetails,
   getComplaints
 } from '../controllers/adminController.js';
+import {  updateAgentLocation } from '../controllers/agentController.js';
 
 const router = express.Router();
 
@@ -37,7 +38,7 @@ router.put('/agents/:id/verify', authGuard, verifyAgent);
 
 // Service requests (All admins except specific restrictions)
 router.get('/service-requests', authGuard, getAllServiceRequests);
-
+router.patch('/update-location', authGuard, updateAgentLocation);
 // Employee management (Super Admin & Admin Head only)
 router.get('/employees', authGuard, getAllEmployees);
 
