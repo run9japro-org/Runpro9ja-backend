@@ -56,7 +56,7 @@ router.patch('/:id/submit-quotation', authGuard, requireRoles([ROLES.REPRESENTAT
 
 // ============ SHARED ROUTES ============
 // GET ORDER BY ID - Accessible by customers, agents, and representatives
-router.get('/:id', authGuard, requireRoles([ROLES.CUSTOMER, ROLES.AGENT, ROLES.REPRESENTATIVE, ROLES.ADMIN]), getOrderById);
+router.get('/:id', authGuard, getOrderById);
 
 
 
