@@ -17,8 +17,9 @@ phone: { type: String, trim: true, index: true },
 password: { type: String, minlength: 6, required: true, select: false },
 
 
-// Profile
-avatarUrl: { type: String },
+ProfileprofileImageId: { type: mongoose.Schema.Types.ObjectId }, // Reference to GridFS file
+  profileImage: { type: String }, // URL to access the image
+  avatarUrl: { type: String }, 
 addresses: [
 {
 label: String, // e.g., Home, Office
