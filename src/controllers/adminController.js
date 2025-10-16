@@ -646,6 +646,112 @@ const getSamplePayments = () => {
     }
   ];
 };
+
+
+// Add these functions to your adminController.js
+
+// GET /api/admins/service-requests
+export const getServiceRequests = async (req, res, next) => {
+  try {
+    const requester = req.user;
+    const allowedRoles = [ROLES.SUPER_ADMIN, ROLES.ADMIN_HEAD, ROLES.ADMIN_AGENT_SERVICE, ROLES.ADMIN_CUSTOMER_SERVICE];
+    if (!allowedRoles.includes(requester.role)) {
+      return res.status(403).json({ message: 'Forbidden' });
+    }
+
+    const { limit = 50, status } = req.query;
+
+    let query = {};
+    if (status) query.status = status;
+
+    const orders = await Order.find(query)
+      .populate('customer', 'fullName email phone')
+      .populate('agent', 'fullName')
+      .populate('serviceCategory', 'name')
+      .sort({ createdAt: -1 })
+      .limit(parseInt(limit));
+
+    const serviceRequests = orders.map(order => ({
+      requestId: `IP-${order._id.toString().slice(-4).toUpperCase()}`,
+      customerName: order.customer?.fullName || 'Unknown Customer',
+      serviceType: order.serviceCategory?.name || order.serviceType || 'General Service',
+      status: order.status || 'pending',
+      dueDate: order.dueDate ? new Date(order.dueDate).toLocaleDateString('en-GB') : 'Not set',
+      originalOrder: order
+    }));
+
+    res.json({
+      success: true,
+      serviceRequests,
+      total: serviceRequests.length
+    });
+  } catch (err) {
+    console.error('Service requests error:', err);
+    next(err);
+  }
+};
+
+// GET /api/admins/delivery-details
+export const getDeliveryDetails = async (req, res, next) => {
+  try {
+    const requester = req.user;
+    const allowedRoles = [ROLES.SUPER_ADMIN, ROLES.ADMIN_HEAD, ROLES.ADMIN_AGENT_SERVICE];
+    if (!allowedRoles.includes(requester.role)) {
+      return res.status(403).json({ message: 'Forbidden' });
+    }
+
+    const { limit = 20 } = req.query;
+
+    // Get orders that involve delivery/pickup services
+    const deliveryOrders = await Order.find({
+      $or: [
+        { serviceType: { $regex: /delivery|errand|pickup/i } },
+        { 'serviceCategory.name': { $regex: /delivery|errand|pickup/i } }
+      ]
+    })
+      .populate('customer', 'fullName email phone')
+      .populate('agent', 'fullName')
+      .populate('serviceCategory', 'name')
+      .sort({ createdAt: -1 })
+      .limit(parseInt(limit));
+
+    const deliveryDetails = deliveryOrders.map(order => {
+      const deliveryType = order.serviceCategory?.name || order.serviceType || 'Delivery Service';
+      
+      return {
+        orderId: `RP-${order._id.toString().slice(-3)}`,
+        deliveryType: deliveryType.length > 15 ? deliveryType.substring(0, 15) + '...' : deliveryType,
+        pickupDestination: formatPickupDestination(order),
+        date: order.createdAt ? new Date(order.createdAt).toLocaleDateString('en-GB') : 'N/A',
+        estimatedTime: order.estimatedDuration || '2 Hours', // Default if not set
+        riderInCharge: order.agent?.fullName || 'Not assigned',
+        orderBy: order.customer?.fullName || 'Unknown Customer',
+        deliveredTo: order.customer?.fullName || 'Unknown Customer',
+        originalOrder: order
+      };
+    });
+
+    res.json({
+      success: true,
+      deliveryDetails,
+      total: deliveryDetails.length
+    });
+  } catch (err) {
+    console.error('Delivery details error:', err);
+    next(err);
+  }
+};
+
+// Helper function to format pickup destination
+const formatPickupDestination = (order) => {
+  if (order.pickupLocation && order.deliveryLocation) {
+    return `From: ${order.pickupLocation} To: ${order.deliveryLocation}`;
+  }
+  if (order.location) {
+    return `Location: ${order.location}`;
+  }
+  return 'Location not specified';
+};
 // ==================== PAYMENT MANAGEMENT ====================
 
 // GET /api/admins/payments -> SUPER_ADMIN, ADMIN_HEAD

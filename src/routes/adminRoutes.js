@@ -16,7 +16,9 @@ import {
   getPaymentDetails,
   getComplaints,
   getRecentPayments,
-  getTopAgents
+  getTopAgents,
+  getServiceRequests,
+  getDeliveryDetails
 } from '../controllers/adminController.js';
 import {  updateAgentLocation } from '../controllers/agentController.js';
 
@@ -44,6 +46,8 @@ router.get('/service-requests', authGuard, getAllServiceRequests);
 router.patch('/update-location', authGuard, updateAgentLocation);
 // Employee management (Super Admin & Admin Head only)
 router.get('/employees', authGuard, getAllEmployees);
+router.get('/delivery-details', authGuard, getDeliveryDetails);
+router.get('/service-requests', authGuard, getServiceRequests);
 
 // Payment management (Super Admin & Admin Head only)
 router.get('/payments', authGuard, getPaymentDetails);
