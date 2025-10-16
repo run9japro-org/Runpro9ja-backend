@@ -21,7 +21,10 @@ import {
   getActiveDeliveries,
   getDeliveryDetails,
   getPotentialProviders,
-  getServiceProviders
+  getServiceProviders,
+  getSupportEmployees,
+  getPendingRequests,
+  getSupportMessages
 } from '../controllers/adminController.js';
 import {  updateAgentLocation } from '../controllers/agentController.js';
 
@@ -54,6 +57,9 @@ router.get('/active-deliveries', authGuard, getActiveDeliveries);
 router.get('/service-requests', authGuard, getServiceRequests);
 router.get('/potential-providers', authGuard, getPotentialProviders);
 router.get('/service-providers', authGuard, getServiceProviders);
+router.get('/support-employees', authGuard, getSupportEmployees);
+router.get('/pending-requests', authGuard, getPendingRequests);
+router.get('/support-messages', authGuard, getSupportMessages);
 
 // Payment management (Super Admin & Admin Head only)
 router.get('/payments', authGuard, getPaymentDetails);

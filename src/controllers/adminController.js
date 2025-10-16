@@ -967,6 +967,160 @@ export const getPotentialProviders = async (req, res, next) => {
   }
 };
 
+// Add to your adminController.js
+
+// GET /api/admins/support-employees
+export const getSupportEmployees = async (req, res, next) => {
+  try {
+    const requester = req.user;
+    const allowedRoles = [ROLES.SUPER_ADMIN, ROLES.ADMIN_HEAD, ROLES.ADMIN_CUSTOMER_SERVICE];
+    if (!allowedRoles.includes(requester.role)) {
+      return res.status(403).json({ message: 'Forbidden' });
+    }
+
+    // Get employees from User model with customer service roles
+    const employees = await User.find({
+      role: { 
+        $in: [ROLES.ADMIN_CUSTOMER_SERVICE, ROLES.ADMIN_AGENT_SERVICE] 
+      }
+    })
+    .select('fullName email phone role createdAt')
+    .sort({ createdAt: -1 });
+
+    const supportEmployees = employees.map(employee => {
+      const roleMap = {
+        [ROLES.ADMIN_CUSTOMER_SERVICE]: 'Customer Service Agent',
+        [ROLES.ADMIN_AGENT_SERVICE]: 'Agent Service Manager',
+        [ROLES.ADMIN_HEAD]: 'Team Lead',
+        [ROLES.SUPER_ADMIN]: 'Administrator'
+      };
+
+      return {
+        id: employee._id,
+        name: employee.fullName || 'Employee',
+        role: roleMap[employee.role] || employee.role,
+        hired: employee.createdAt ? new Date(employee.createdAt).toLocaleDateString('en-GB') : 'N/A',
+        department: getDepartmentFromRole(employee.role),
+        email: employee.email || 'No email',
+        phone: employee.phone || 'No phone',
+        joinDate: employee.createdAt
+      };
+    });
+
+    res.json({
+      success: true,
+      employees: supportEmployees,
+      total: supportEmployees.length
+    });
+  } catch (err) {
+    console.error('Support employees error:', err);
+    next(err);
+  }
+};
+
+// GET /api/admins/pending-requests
+export const getPendingRequests = async (req, res, next) => {
+  try {
+    const requester = req.user;
+    const allowedRoles = [ROLES.SUPER_ADMIN, ROLES.ADMIN_HEAD, ROLES.ADMIN_CUSTOMER_SERVICE];
+    if (!allowedRoles.includes(requester.role)) {
+      return res.status(403).json({ message: 'Forbidden' });
+    }
+
+    // Get pending professional service requests
+    const pendingOrders = await Order.find({
+      $or: [
+        { orderType: 'professional' },
+        { 'timeline.status': { $in: ['requested', 'quotation_provided', 'inspection_scheduled'] } }
+      ],
+      agent: { $exists: false } // Not assigned yet
+    })
+    .populate('customer', 'fullName email phone')
+    .populate('serviceCategory', 'name')
+    .sort({ createdAt: -1 })
+    .limit(10);
+
+    const pendingRequests = pendingOrders.map(order => {
+      const latestStatus = order.timeline && order.timeline.length > 0 
+        ? order.timeline[order.timeline.length - 1].status 
+        : 'requested';
+
+      return {
+        id: order._id,
+        name: order.customer?.fullName || 'Customer',
+        service: order.serviceCategory?.name || 'Professional Service',
+        requestId: `RP-${order._id.toString().slice(-6)}`,
+        status: latestStatus,
+        createdAt: order.createdAt,
+        customerEmail: order.customer?.email,
+        customerPhone: order.customer?.phone
+      };
+    });
+
+    res.json({
+      success: true,
+      requests: pendingRequests,
+      total: pendingRequests.length
+    });
+  } catch (err) {
+    console.error('Pending requests error:', err);
+    next(err);
+  }
+};
+
+// GET /api/admins/support-messages
+export const getSupportMessages = async (req, res, next) => {
+  try {
+    const requester = req.user;
+    const allowedRoles = [ROLES.SUPER_ADMIN, ROLES.ADMIN_HEAD, ROLES.ADMIN_CUSTOMER_SERVICE];
+    if (!allowedRoles.includes(requester.role)) {
+      return res.status(403).json({ message: 'Forbidden' });
+    }
+
+    // This would typically come from a Message model
+    // For now, return sample messages or integrate with your chat system
+    const messages = [
+      {
+        id: 1,
+        sender: "You",
+        text: "Rose, can you see to it that the person that went to observe is back so that I can assign a service provider.",
+        time: "Monday 11:20",
+        self: true,
+        timestamp: new Date()
+      },
+      {
+        id: 2,
+        sender: "Shade Musab",
+        text: "And, why can't you do it yourself? Rose has not responded in a while; would you keep the customer waiting?",
+        time: "Monday 10:54",
+        self: false,
+        timestamp: new Date(Date.now() - 30 * 60 * 1000)
+      }
+    ];
+
+    res.json({
+      success: true,
+      messages,
+      total: messages.length
+    });
+  } catch (err) {
+    console.error('Support messages error:', err);
+    next(err);
+  }
+};
+
+// Helper function to get department from role
+const getDepartmentFromRole = (role) => {
+  const departmentMap = {
+    [ROLES.ADMIN_CUSTOMER_SERVICE]: 'Customer Care Service',
+    [ROLES.ADMIN_AGENT_SERVICE]: 'Agent Service Department',
+    [ROLES.ADMIN_HEAD]: 'Management',
+    [ROLES.SUPER_ADMIN]: 'Administration'
+  };
+  
+  return departmentMap[role] || 'General Department';
+};
+
 // Helper function to calculate work rate
 const calculateWorkRate = (agent) => {
   if (!agent.totalOrders || agent.totalOrders === 0) return 0;
