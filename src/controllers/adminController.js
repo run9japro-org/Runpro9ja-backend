@@ -863,6 +863,119 @@ export const getActiveDeliveries = async (req, res, next) => {
     next(err);
   }
 };
+// Add to your adminController.js
+
+// GET /api/admins/service-providers
+export const getServiceProviders = async (req, res, next) => {
+  try {
+    const requester = req.user;
+    const allowedRoles = [ROLES.SUPER_ADMIN, ROLES.ADMIN_HEAD, ROLES.ADMIN_AGENT_SERVICE];
+    if (!allowedRoles.includes(requester.role)) {
+      return res.status(403).json({ message: 'Forbidden' });
+    }
+
+    const { limit = 50, status } = req.query;
+
+    let query = {};
+    if (status) {
+      query.verificationStatus = status;
+    }
+
+    const agents = await AgentProfile.find(query)
+      .populate('user', 'fullName email phone profileImage')
+      .populate('services', 'name')
+      .sort({ createdAt: -1 })
+      .limit(parseInt(limit));
+
+    const serviceProviders = agents.map(agent => {
+      // Calculate work rate based on completed orders
+      const workRate = calculateWorkRate(agent);
+      
+      return {
+        id: agent._id,
+        agentId: `SP${agent._id.toString().slice(-4)}`,
+        name: agent.user?.fullName || 'Unknown Agent',
+        service: agent.serviceType || agent.services?.[0]?.name || 'General Service',
+        status: agent.isVerified ? 'Active' : 'Inactive',
+        workRate: workRate,
+        location: agent.location || agent.address || 'Location not specified',
+        email: agent.user?.email,
+        phone: agent.user?.phone,
+        profileImage: agent.user?.profileImage,
+        joinedDate: agent.createdAt,
+        completedOrders: agent.completedOrders || 0,
+        totalOrders: agent.totalOrders || 0
+      };
+    });
+
+    res.json({
+      success: true,
+      serviceProviders,
+      total: serviceProviders.length
+    });
+  } catch (err) {
+    console.error('Service providers error:', err);
+    next(err);
+  }
+};
+
+// GET /api/admins/potential-providers
+export const getPotentialProviders = async (req, res, next) => {
+  try {
+    const requester = req.user;
+    const allowedRoles = [ROLES.SUPER_ADMIN, ROLES.ADMIN_HEAD, ROLES.ADMIN_AGENT_SERVICE];
+    if (!allowedRoles.includes(requester.role)) {
+      return res.status(403).json({ message: 'Forbidden' });
+    }
+
+    const { limit = 20 } = req.query;
+
+    // Get agents that are not yet verified or are pending
+    const potentialAgents = await AgentProfile.find({
+      $or: [
+        { isVerified: false },
+        { verificationStatus: { $in: ['pending', 'reviewing', 'waitlisted'] } }
+      ]
+    })
+      .populate('user', 'fullName email phone')
+      .sort({ createdAt: -1 })
+      .limit(parseInt(limit));
+
+    const potentialProviders = potentialAgents.map(agent => {
+      return {
+        id: agent._id,
+        name: agent.user?.fullName || 'Applicant',
+        appliedFor: agent.serviceType || 'Service Provider',
+        experience: agent.experience || 'Not specified',
+        location: agent.location || agent.address || 'Location not specified',
+        phone: agent.user?.phone || 'Not provided',
+        email: agent.user?.email || 'Not provided',
+        status: agent.verificationStatus || 'pending',
+        appliedDate: agent.createdAt,
+        notes: agent.verificationNotes
+      };
+    });
+
+    res.json({
+      success: true,
+      potentialProviders,
+      total: potentialProviders.length
+    });
+  } catch (err) {
+    console.error('Potential providers error:', err);
+    next(err);
+  }
+};
+
+// Helper function to calculate work rate
+const calculateWorkRate = (agent) => {
+  if (!agent.totalOrders || agent.totalOrders === 0) return 0;
+  
+  const completedOrders = agent.completedOrders || 0;
+  const workRate = Math.round((completedOrders / agent.totalOrders) * 100);
+  
+  return Math.min(workRate, 100); // Cap at 100%
+};
 
 // Helper function to format delivery status
 const formatDeliveryStatus = (status) => {
