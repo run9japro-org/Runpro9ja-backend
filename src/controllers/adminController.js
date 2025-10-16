@@ -1287,6 +1287,260 @@ export const getPaymentDetails = async (req, res, next) => {
   }
 };
 
+// Add to your adminController.js
+
+// GET /api/admins/payments-summary
+export const getPaymentsSummary = async (req, res, next) => {
+  try {
+    const requester = req.user;
+    if (![ROLES.SUPER_ADMIN, ROLES.ADMIN_HEAD].includes(requester.role)) {
+      return res.status(403).json({ message: 'Forbidden' });
+    }
+
+    const { period = 'daily' } = req.query; // daily, monthly, yearly
+
+    // Calculate date ranges based on period
+    const now = new Date();
+    let startDate, endDate;
+
+    switch (period) {
+      case 'daily':
+        startDate = new Date(now.setHours(0, 0, 0, 0));
+        endDate = new Date(now.setHours(23, 59, 59, 999));
+        break;
+      case 'monthly':
+        startDate = new Date(now.getFullYear(), now.getMonth(), 1);
+        endDate = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59, 999);
+        break;
+      case 'yearly':
+        startDate = new Date(now.getFullYear(), 0, 1);
+        endDate = new Date(now.getFullYear(), 11, 31, 23, 59, 59, 999);
+        break;
+      default:
+        startDate = new Date(now.setHours(0, 0, 0, 0));
+        endDate = new Date(now.setHours(23, 59, 59, 999));
+    }
+
+    // Get payment statistics
+    const paymentStats = await Payment.aggregate([
+      {
+        $match: {
+          createdAt: { $gte: startDate, $lte: endDate }
+        }
+      },
+      {
+        $group: {
+          _id: null,
+          totalAmount: { $sum: '$amount' },
+          successfulAmount: {
+            $sum: {
+              $cond: [{ $eq: ['$status', 'success'] }, '$amount', 0]
+            }
+          },
+          failedAmount: {
+            $sum: {
+              $cond: [{ $eq: ['$status', 'failed'] }, '$amount', 0]
+            }
+          },
+          successfulCount: {
+            $sum: {
+              $cond: [{ $eq: ['$status', 'success'] }, 1, 0]
+            }
+          },
+          failedCount: {
+            $sum: {
+              $cond: [{ $eq: ['$status', 'failed'] }, 1, 0]
+            }
+          },
+          pendingCount: {
+            $sum: {
+              $cond: [{ $eq: ['$status', 'pending'] }, 1, 0]
+            }
+          },
+          totalCount: { $sum: 1 }
+        }
+      }
+    ]);
+
+    // Get account balance (total successful payments)
+    const accountBalance = await Payment.aggregate([
+      {
+        $match: { status: 'success' }
+      },
+      {
+        $group: {
+          _id: null,
+          total: { $sum: '$amount' }
+        }
+      }
+    ]);
+
+    // Get monthly transaction (current month successful payments)
+    const monthlyStart = new Date(now.getFullYear(), now.getMonth(), 1);
+    const monthlyEnd = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59, 999);
+    
+    const monthlyTransaction = await Payment.aggregate([
+      {
+        $match: {
+          status: 'success',
+          createdAt: { $gte: monthlyStart, $lte: monthlyEnd }
+        }
+      },
+      {
+        $group: {
+          _id: null,
+          total: { $sum: '$amount' }
+        }
+      }
+    ]);
+
+    const stats = paymentStats[0] || {
+      totalAmount: 0,
+      successfulAmount: 0,
+      failedAmount: 0,
+      successfulCount: 0,
+      failedCount: 0,
+      pendingCount: 0,
+      totalCount: 0
+    };
+
+    res.json({
+      success: true,
+      summary: {
+        accountBalance: accountBalance[0]?.total || 0,
+        monthlyTransaction: monthlyTransaction[0]?.total || 0,
+        dailyTransaction: period === 'daily' ? stats.successfulAmount : 0,
+        period: period,
+        inflow: stats.successfulAmount,
+        outflow: 0, // You might want to calculate agent payouts separately
+        successfulTransactions: stats.successfulCount,
+        failedTransactions: stats.failedCount,
+        refunds: 0, // You can add refund tracking to your Payment model
+        totalTransactions: stats.totalCount
+      },
+      growth: {
+        daily: calculateGrowth('daily'), // You'd implement growth calculation
+        monthly: calculateGrowth('monthly'),
+        yearly: calculateGrowth('yearly')
+      }
+    });
+  } catch (err) {
+    console.error('Payments summary error:', err);
+    next(err);
+  }
+};
+
+// GET /api/admins/payments-inflow
+export const getPaymentsInflow = async (req, res, next) => {
+  try {
+    const requester = req.user;
+    if (![ROLES.SUPER_ADMIN, ROLES.ADMIN_HEAD].includes(requester.role)) {
+      return res.status(403).json({ message: 'Forbidden' });
+    }
+
+    const { limit = 50, status } = req.query;
+
+    let query = { status: 'success' }; // Inflow are successful payments
+    if (status) query.status = status;
+
+    const payments = await Payment.find(query)
+      .populate('customer', 'fullName email phone')
+      .populate('order')
+      .sort({ createdAt: -1 })
+      .limit(parseInt(limit));
+
+    const inflowData = payments.map(payment => {
+      const order = payment.order;
+      return {
+        id: payment._id,
+        name: payment.customer?.fullName || 'Customer',
+        orderId: order ? `ORD-${order._id.toString().slice(-4)}` : 'N/A',
+        address: order?.location || 'Address not specified',
+        service: order?.serviceCategory?.name || 'Service',
+        hours: order?.estimatedDuration ? Math.ceil(order.estimatedDuration / 60) : 0,
+        date: payment.createdAt ? new Date(payment.createdAt).toLocaleDateString('en-GB') : 'N/A',
+        amount: `₦${payment.amount?.toLocaleString() || '0'}`,
+        type: payment.paymentMethod || 'Transfer',
+        status: payment.status === 'success' ? 'Successful' : 'Pending',
+        originalPayment: payment
+      };
+    });
+
+    res.json({
+      success: true,
+      inflowData,
+      total: inflowData.length
+    });
+  } catch (err) {
+    console.error('Payments inflow error:', err);
+    next(err);
+  }
+};
+
+// GET /api/admins/payments-outflow
+export const getPaymentsOutflow = async (req, res, next) => {
+  try {
+    const requester = req.user;
+    if (![ROLES.SUPER_ADMIN, ROLES.ADMIN_HEAD].includes(requester.role)) {
+      return res.status(403).json({ message: 'Forbidden' });
+    }
+
+    const { limit = 50 } = req.query;
+
+    // Outflow would be payments to agents (you might have a separate Payout model)
+    // For now, we'll use completed orders with agents
+    const completedOrders = await Order.find({
+      'timeline.status': 'completed',
+      agent: { $exists: true }
+    })
+      .populate('customer', 'fullName')
+      .populate('agent', 'fullName')
+      .populate('serviceCategory', 'name')
+      .sort({ completedAt: -1 })
+      .limit(parseInt(limit));
+
+    const outflowData = completedOrders.map(order => {
+      // Calculate agent payout (you might have this in your Payment model)
+      const agentPayout = order.price ? order.price * 0.7 : 0; // Example: 70% to agent
+
+      return {
+        id: order._id,
+        provider: order.agent?.fullName || 'Service Provider',
+        serviceId: `SRV-${order._id.toString().slice(-4)}`,
+        address: order.location || 'Address not specified',
+        service: order.serviceCategory?.name || 'Service',
+        hours: order.estimatedDuration ? Math.ceil(order.estimatedDuration / 60) : 0,
+        date: order.completedAt ? new Date(order.completedAt).toLocaleDateString('en-GB') : 'N/A',
+        amount: `₦${agentPayout.toLocaleString()}`,
+        status: 'Successful', // Assuming paid to agent
+        originalOrder: order
+      };
+    });
+
+    res.json({
+      success: true,
+      outflowData,
+      total: outflowData.length
+    });
+  } catch (err) {
+    console.error('Payments outflow error:', err);
+    next(err);
+  }
+};
+
+// Helper function to calculate growth percentages
+const calculateGrowth = (period) => {
+  // This would compare with previous period
+  // For now, return mock growth data
+  const growthMap = {
+    daily: { percentage: 23.4, users: 123, trend: 'up' },
+    monthly: { percentage: 15.2, users: 50, trend: 'up' },
+    yearly: { percentage: 10.4, users: -50, trend: 'down' }
+  };
+  
+  return growthMap[period] || { percentage: 0, users: 0, trend: 'up' };
+};
+
 // ==================== COMPLAINT MANAGEMENT ====================
 
 // GET /api/admins/complaints -> SUPER_ADMIN, ADMIN_HEAD, ADMIN_CUSTOMER_SERVICE

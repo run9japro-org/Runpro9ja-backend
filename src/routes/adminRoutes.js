@@ -24,7 +24,10 @@ import {
   getServiceProviders,
   getSupportEmployees,
   getPendingRequests,
-  getSupportMessages
+  getPaymentsSummary,
+  getPaymentsInflow,
+  getSupportMessages,
+  getPaymentsOutflow
 } from '../controllers/adminController.js';
 import {  updateAgentLocation } from '../controllers/agentController.js';
 
@@ -64,6 +67,9 @@ router.get('/support-messages', authGuard, getSupportMessages);
 // Payment management (Super Admin & Admin Head only)
 router.get('/payments', authGuard, getPaymentDetails);
 router.get('/recent-payments', authGuard, getRecentPayments);
+router.get('/payments-summary', authGuard, getPaymentsSummary);
+router.get('/payments-inflow', authGuard, getPaymentsInflow);
+router.get('/payments-outflow', authGuard, getPaymentsOutflow);
 
 // Complaint management (Super Admin, Admin Head, Admin Customer Service)
 router.get('/complaints', authGuard, getComplaints);
