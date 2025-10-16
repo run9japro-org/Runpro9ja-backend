@@ -54,7 +54,9 @@ app.use(
   cors({
     origin: [
       "http://localhost:3000",
-      "http://localhost:5173", // 👈 for your Vite app
+      "http://localhost:5173",
+      "http://localhost:5174", // 👈 for your Vite app
+      "https://your-production-domain.com", // optional
       "https://your-production-domain.com" // optional
     ],
     credentials: true,
