@@ -1,8 +1,8 @@
-import { User } from '../models/User.js';
+import  {User } from '../models/User.js';
 import { generateNumericOtp } from '../utils/generateOtp.js';
 import { sendOtpEmail,sendPasswordResetEmail } from '../services/emailService.js';
 import { issueToken } from '../middlewares/auth.js';
-import {randomBytes}  from "crypto";
+import crypto from 'crypto';
 
 const OTP_TTL_MINUTES = 10;
 
@@ -53,30 +53,60 @@ export const register = async (req, res, next) => {
 };
 
 // LOGIN
+const generateStrongPassword = (length = 16) => {
+  return crypto.randomBytes(length).toString('base64').slice(0, length);
+};
+
 export const login = async (req, res, next) => {
   try {
     const { identifier, password } = req.body;
     if (!identifier || !password) {
       return res.status(400).json({
         success: false,
-        message: 'Email and password are required'
+        message: 'Username or Email and password are required'
       });
     }
 
-    const user = await User.findOne({ email: identifier }).select('+password');
-    if (!user) return res.status(404).json({ success: false, message: 'User not found' });
+    // ✅ find user by email OR username
+    const user = await User.findOne({
+      $or: [{ email: identifier }, { username: identifier }]
+    }).select('+password');
 
-    const isPasswordValid = await user.comparePassword(password);
+    if (!user)
+      return res.status(404).json({ success: false, message: 'User not found' });
+
+    // ✅ handle admin password rotation (every 24 hours)
+    if (user.role?.includes('ADMIN')) {
+      const now = new Date();
+      const lastRotated = user.passwordLastRotated || user.createdAt;
+      const hoursSinceRotation = (now - new Date(lastRotated)) / (1000 * 60 * 60);
+
+      if (hoursSinceRotation >= 24) {
+        const newPass = generateStrongPassword(16);
+        user.password = await bcrypt.hash(newPass, SALT_ROUNDS);
+        user.passwordLastRotated = now;
+        await user.save();
+
+        // In production: Notify super_admin/head_admin securely (email/SMS)
+        return res.status(403).json({
+          success: false,
+          message:
+            'Password rotated automatically. Contact your super admin for your new password.'
+        });
+      }
+    }
+
+    // ✅ validate password
+    const isPasswordValid = await bcrypt.compare(password, user.password);
     if (!isPasswordValid)
       return res.status(401).json({ success: false, message: 'Invalid credentials' });
 
-    
-
+    // ✅ issue token
     const token = issueToken({
       id: user._id,
       role: user.role,
-      name: user.fullName,
-      email: user.email,
+      name: user.fullName || user.username,
+      email: user.email || null
     });
 
     res.json({
@@ -86,8 +116,8 @@ export const login = async (req, res, next) => {
       user: {
         id: user._id,
         role: user.role,
-        name: user.fullName,
-        email: user.email
+        name: user.fullName || user.username,
+        email: user.email || null
       }
     });
   } catch (error) {

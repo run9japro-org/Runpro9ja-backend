@@ -11,11 +11,12 @@ enum: Object.values(ROLES),
 required: true,
 index: true
 },
+username: { type: String, unique: true, sparse: true },
 fullName: { type: String, required: true },
 email: { type: String, lowercase: true, trim: true, index: true },
 phone: { type: String, trim: true, index: true },
 password: { type: String, minlength: 6, required: true, select: false },
-
+ passwordLastRotated: { type: Date, default: Date.now },
 
 ProfileprofileImageId: { type: mongoose.Schema.Types.ObjectId }, // Reference to GridFS file
   profileImage: { type: String }, // URL to access the image

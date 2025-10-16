@@ -181,7 +181,27 @@ ORDER_REVIEWED: (orderId, rating) => ({
     message: offer,
     type: 'promotion', // ✅ This must match your enum
     priority: 'low'
-  })
+  }),
+  // --- Admin Security Notifications ---
+ADMIN_PASSWORD_ROTATED: (adminName, username, newPassword) => ({
+  title: 'Admin Password Rotated',
+  message: `A new daily password has been generated for ${adminName} (${username}).`,
+  type: 'security',
+  priority: 'high',
+  data: { adminName, username, newPassword },
+  actionUrl: '/admin/manage-admins'
+}),
+
+ADMIN_PASSWORD_ROTATION_FAILED: (adminName, username) => ({
+  title: 'Password Rotation Failed',
+  message: `Password rotation for ${adminName} (${username}) failed. Manual intervention may be required.`,
+  type: 'security',
+  priority: 'urgent',
+  data: { adminName, username },
+  actionUrl: '/admin/manage-admins'
+}),
+
+
 
 };
 

@@ -7,76 +7,56 @@ import  Order  from '../models/Order.js';
 import { Payment } from '../models/Payment.js';
 import { sendEmail } from '../services/emailService.js';
 import { ROLES } from '../constants/roles.js';
+import { generateStrongPassword } from "../utils/passwordGenerator.js";
+import { notifyUser } from "../services/notificationService.js";
 
-const SALT_ROUNDS = 12;
-
-// Helper: generate a safe random temporary password
-const generateTempPassword = (len = 10) =>
-  crypto.randomBytes(Math.ceil(len * 3 / 4)).toString('base64').slice(0, len);
-
-// ==================== SUPER ADMIN & ADMIN HEAD ONLY ====================
-
-// POST /api/admins  (create new admin) -> only SUPER_ADMIN or ADMIN_HEAD
 export const createAdmin = async (req, res, next) => {
   try {
-    const creatorUser = req.user;
-    if (![ROLES.SUPER_ADMIN, ROLES.ADMIN_HEAD].includes(creatorUser.role)) {
-      return res.status(403).json({ message: 'Forbidden' });
+    // Only super_admin or head_admin can create admins
+    if (![ROLES.SUPER_ADMIN, ROLES.HEAD_ADMIN].includes(req.user.role)) {
+      return res.status(403).json({
+        success: false,
+        message: "You are not authorized to create admins.",
+      });
     }
 
-    const { email, fullName, role } = req.body;
-    if (!email || !fullName || !role) {
-      return res.status(400).json({ message: 'Missing required fields: email, fullName, role' });
+    const { username, fullName } = req.body;
+    if (!username || !fullName) {
+      return res.status(400).json({
+        success: false,
+        message: "Username and full name are required.",
+      });
     }
 
-    const allowedRoles = [ROLES.ADMIN_HEAD, ROLES.ADMIN_AGENT_SERVICE, ROLES.ADMIN_CUSTOMER_SERVICE];
-    if (!allowedRoles.includes(role)) {
-      return res.status(400).json({ message: 'Invalid role for admin creation' });
-    }
+    // Generate secure password
+    const rawPassword = generateStrongPassword();
+    const hashedPassword = await bcrypt.hash(rawPassword, 10);
 
-    const existing = await User.findOne({ email });
-    if (existing) return res.status(409).json({ message: 'User already exists' });
-
-    const tempPassword = generateTempPassword(12);
-    const hashed = await bcrypt.hash(tempPassword, SALT_ROUNDS);
-
-    const newAdmin = await User.create({
-      email,
+    const admin = await User.create({
+      username,
       fullName,
-      password: hashed,
-      role,
+      role: ROLES.ADMIN,
+      password: hashedPassword,
+      passwordLastRotated: new Date(),
       isVerified: true,
     });
 
-    try {
-      await sendEmail({
-        to: email,
-        subject: 'Admin account created',
-        html: `<p>Hello ${fullName},</p>
-               <p>An admin account was created for you. Use the temporary password below to log in and change it immediately:</p>
-               <p><b>${tempPassword}</b></p>
-               <p>Please change your password after first login.</p>`
-      });
-    } catch (err) {
-      console.error('Failed to send admin creation email:', err.message || err);
-    }
+    // Optional notification (if using your service)
+    await notifyUser(admin._id, "WELCOME");
 
     return res.status(201).json({
       success: true,
-      message: 'Admin created',
-      admin: {
-        id: newAdmin._id,
-        email: newAdmin.email,
-        fullName: newAdmin.fullName,
-        role: newAdmin.role,
+      message: "Admin created successfully.",
+      data: {
+        username: admin.username,
+        password: rawPassword, // show once for them to note down
       },
-      tempPassword
     });
   } catch (err) {
+    console.error("Error creating admin:", err);
     next(err);
   }
 };
-
 // DELETE /api/admins/:id (delete an admin) -> only SUPER_ADMIN
 export const deleteAdmin = async (req, res, next) => {
   try {

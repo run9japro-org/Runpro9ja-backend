@@ -10,6 +10,7 @@ import { errorHandler, notFound } from "./src/middlewares/errorHandler.js";
 import path from "path"; // ✅ ADD THIS IMPORT
 // ✅ Routes
 
+import { startCronJobs } from "./src/utils/cronJobs.js";
 import { handleWebhook } from "./src/controllers/paymentController.js";
 import authRoutes from "./src/routes/authRoutes.js";
 import serviceRoutes from "./src/routes/serviceRoutes.js";
@@ -68,6 +69,10 @@ app.get("/", (req, res) =>
 );
 
 // ✅ Mount routes
+
+// After successful DB connection
+startCronJobs();
+
 app.use("/api/auth", authRoutes);
 app.use("/api/services", serviceRoutes);
 app.use("/api/agents", agentRoutes);
