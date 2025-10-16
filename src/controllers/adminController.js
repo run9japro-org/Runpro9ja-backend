@@ -126,6 +126,7 @@ export const deleteUserAccount = async (req, res, next) => {
 // ==================== COMPANY ANALYSIS & DASHBOARD ====================
 
 // GET /api/admins/analytics/summary -> SUPER_ADMIN, ADMIN_HEAD, ADMIN_AGENT_SERVICE
+// In your backend adminController.js - update the getCompanyAnalytics function
 export const getCompanyAnalytics = async (req, res, next) => {
   try {
     const requester = req.user;
@@ -157,35 +158,23 @@ export const getCompanyAnalytics = async (req, res, next) => {
         startDate.setDate(startDate.getDate() - 7);
     }
 
-    console.log('Date range:', { startDate, endDate: new Date(), period }); // Add logging
-
     // Get total counts
     const totalUsers = await User.countDocuments();
     const totalAgents = await AgentProfile.countDocuments();
     const totalOrders = await Order.countDocuments();
-    
-    // Debug: Check if there are any payments
-    const allPayments = await Payment.find({});
-    console.log('Total payments in DB:', allPayments.length);
-    
     const totalRevenue = await Payment.aggregate([
       { $match: { status: 'success' } },
       { $group: { _id: null, total: { $sum: '$amount' } } }
     ]);
 
-    console.log('Total revenue aggregation result:', totalRevenue);
-
     // Get period-specific data
     const newUsers = await User.countDocuments({ createdAt: { $gte: startDate } });
     const newAgents = await AgentProfile.countDocuments({ createdAt: { $gte: startDate } });
     const periodOrders = await Order.countDocuments({ createdAt: { $gte: startDate } });
-    
     const periodRevenue = await Payment.aggregate([
       { $match: { status: 'success', createdAt: { $gte: startDate } } },
       { $group: { _id: null, total: { $sum: '$amount' } } }
     ]);
-
-    console.log('Period revenue result:', periodRevenue);
 
     // Service breakdown
     const serviceBreakdown = await Order.aggregate([
@@ -193,7 +182,7 @@ export const getCompanyAnalytics = async (req, res, next) => {
       { $group: { _id: '$serviceCategory', count: { $sum: 1 } } }
     ]);
 
-    // Weekly services (last 4 weeks) - use fresh date
+    // Weekly services (last 4 weeks)
     const fourWeeksAgo = new Date();
     fourWeeksAgo.setDate(fourWeeksAgo.getDate() - 28);
     
@@ -215,6 +204,45 @@ export const getCompanyAnalytics = async (req, res, next) => {
       { $sort: { '_id.year': 1, '_id.week': 1 } }
     ]);
 
+    // NEW: Monthly data for current year
+    const currentYear = new Date().getFullYear();
+    const yearStart = new Date(currentYear, 0, 1);
+    
+    const monthlyOrders = await Order.aggregate([
+      { 
+        $match: { 
+          createdAt: { $gte: yearStart } 
+        } 
+      },
+      {
+        $group: {
+          _id: { month: { $month: '$createdAt' } },
+          count: { $sum: 1 }
+        }
+      },
+      { $sort: { '_id.month': 1 } }
+    ]);
+
+    // NEW: Weekly data for current month (day by day)
+    const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+    const dailyOrders = await Order.aggregate([
+      { 
+        $match: { 
+          createdAt: { $gte: monthStart } 
+        } 
+      },
+      {
+        $group: {
+          _id: { 
+            day: { $dayOfMonth: '$createdAt' },
+            month: { $month: '$createdAt' }
+          },
+          count: { $sum: 1 }
+        }
+      },
+      { $sort: { '_id.day': 1 } }
+    ]);
+
     res.json({
       success: true,
       analytics: {
@@ -232,7 +260,10 @@ export const getCompanyAnalytics = async (req, res, next) => {
           revenue: periodRevenue[0]?.total || 0
         },
         serviceBreakdown,
-        weeklyServices
+        weeklyServices,
+        // NEW: Chart-specific data
+        monthlyData: monthlyOrders,
+        dailyData: dailyOrders
       }
     });
   } catch (err) {
