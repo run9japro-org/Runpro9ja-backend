@@ -134,41 +134,58 @@ export const getCompanyAnalytics = async (req, res, next) => {
       return res.status(403).json({ message: 'Forbidden' });
     }
 
-    const { period = 'week' } = req.query; // week, month, year
+    const { period = 'week' } = req.query;
     const now = new Date();
     let startDate;
 
+    // Create fresh date objects for each calculation
     switch (period) {
       case 'week':
-        startDate = new Date(now.setDate(now.getDate() - 7));
+        startDate = new Date(now);
+        startDate.setDate(startDate.getDate() - 7);
         break;
       case 'month':
-        startDate = new Date(now.setMonth(now.getMonth() - 1));
+        startDate = new Date(now);
+        startDate.setMonth(startDate.getMonth() - 1);
         break;
       case 'year':
-        startDate = new Date(now.setFullYear(now.getFullYear() - 1));
+        startDate = new Date(now);
+        startDate.setFullYear(startDate.getFullYear() - 1);
         break;
       default:
-        startDate = new Date(now.setDate(now.getDate() - 7));
+        startDate = new Date(now);
+        startDate.setDate(startDate.getDate() - 7);
     }
+
+    console.log('Date range:', { startDate, endDate: new Date(), period }); // Add logging
 
     // Get total counts
     const totalUsers = await User.countDocuments();
     const totalAgents = await AgentProfile.countDocuments();
     const totalOrders = await Order.countDocuments();
+    
+    // Debug: Check if there are any payments
+    const allPayments = await Payment.find({});
+    console.log('Total payments in DB:', allPayments.length);
+    
     const totalRevenue = await Payment.aggregate([
       { $match: { status: 'success' } },
       { $group: { _id: null, total: { $sum: '$amount' } } }
     ]);
 
+    console.log('Total revenue aggregation result:', totalRevenue);
+
     // Get period-specific data
     const newUsers = await User.countDocuments({ createdAt: { $gte: startDate } });
     const newAgents = await AgentProfile.countDocuments({ createdAt: { $gte: startDate } });
     const periodOrders = await Order.countDocuments({ createdAt: { $gte: startDate } });
+    
     const periodRevenue = await Payment.aggregate([
       { $match: { status: 'success', createdAt: { $gte: startDate } } },
       { $group: { _id: null, total: { $sum: '$amount' } } }
     ]);
+
+    console.log('Period revenue result:', periodRevenue);
 
     // Service breakdown
     const serviceBreakdown = await Order.aggregate([
@@ -176,11 +193,14 @@ export const getCompanyAnalytics = async (req, res, next) => {
       { $group: { _id: '$serviceCategory', count: { $sum: 1 } } }
     ]);
 
-    // Weekly services (last 4 weeks)
+    // Weekly services (last 4 weeks) - use fresh date
+    const fourWeeksAgo = new Date();
+    fourWeeksAgo.setDate(fourWeeksAgo.getDate() - 28);
+    
     const weeklyServices = await Order.aggregate([
       {
         $match: {
-          createdAt: { $gte: new Date(now.setDate(now.getDate() - 28)) }
+          createdAt: { $gte: fourWeeksAgo }
         }
       },
       {
@@ -216,6 +236,7 @@ export const getCompanyAnalytics = async (req, res, next) => {
       }
     });
   } catch (err) {
+    console.error('Analytics error:', err);
     next(err);
   }
 };
