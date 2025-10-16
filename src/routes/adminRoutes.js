@@ -30,11 +30,25 @@ import {
   getPaymentsOutflow,
   getAccounts,
   deleteAccounts,
-  updateAccount
+  updateAccount,
+  // Add the new dashboard functions
+  getDashboardOverview,
+  getDashboardAnalytics,
+  getQuickStats
 } from '../controllers/adminController.js';
 import {  updateAgentLocation } from '../controllers/agentController.js';
 
 const router = express.Router();
+
+// ==================== DASHBOARD ROUTES ====================
+// Dashboard overview (Super Admin, Admin Head, Admin Agent Service, Admin Customer Service)
+router.get('/dashboard/overview', authGuard, getDashboardOverview);
+
+// Dashboard analytics (Super Admin, Admin Head, Admin Agent Service)
+router.get('/dashboard/analytics', authGuard, getDashboardAnalytics);
+
+// Quick stats (Super Admin, Admin Head, Admin Agent Service, Admin Customer Service)
+router.get('/dashboard/quick-stats', authGuard, getQuickStats);
 
 // Admin management (Super Admin & Admin Head only)
 router.post('/', authGuard, createAdmin);
@@ -56,6 +70,7 @@ router.put('/agents/:id/verify', authGuard, verifyAgent);
 // Service requests (All admins except specific restrictions)
 router.get('/service-requests', authGuard, getAllServiceRequests);
 router.patch('/update-location', authGuard, updateAgentLocation);
+
 // Employee management (Super Admin & Admin Head only)
 router.get('/employees', authGuard, getAllEmployees);
 router.get('/delivery-details', authGuard, getDeliveryDetails);
@@ -74,7 +89,7 @@ router.get('/payments-summary', authGuard, getPaymentsSummary);
 router.get('/payments-inflow', authGuard, getPaymentsInflow);
 router.get('/payments-outflow', authGuard, getPaymentsOutflow);
 
-
+// Account management
 router.get('/accounts', authGuard, getAccounts);
 router.put('/accounts/:id', authGuard, updateAccount);
 router.delete('/accounts', authGuard, deleteAccounts);
