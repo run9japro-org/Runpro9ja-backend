@@ -1541,6 +1541,179 @@ const calculateGrowth = (period) => {
   return growthMap[period] || { percentage: 0, users: 0, trend: 'up' };
 };
 
+// Add to your adminController.js
+
+// GET /api/admins/accounts
+export const getAccounts = async (req, res, next) => {
+  try {
+    const requester = req.user;
+    if (![ROLES.SUPER_ADMIN, ROLES.ADMIN_HEAD].includes(requester.role)) {
+      return res.status(403).json({ message: 'Forbidden' });
+    }
+
+    const { 
+      type = 'users', // users, service-provider, customer-care
+      page = 1, 
+      limit = 13,
+      search = ''
+    } = req.query;
+
+    const skip = (page - 1) * limit;
+
+    // Build query based on account type
+    let query = {};
+    let roleFilter = {};
+
+    switch (type) {
+      case 'users':
+        roleFilter = { 
+          $in: [ROLES.USER, ROLES.CUSTOMER] 
+        };
+        break;
+      case 'service-provider':
+        roleFilter = { 
+          $in: [ROLES.AGENT, ROLES.PROVIDER] 
+        };
+        break;
+      case 'customer-care':
+        roleFilter = { 
+          $in: [ROLES.ADMIN_CUSTOMER_SERVICE] 
+        };
+        break;
+      default:
+        roleFilter = { $in: [ROLES.USER, ROLES.CUSTOMER] };
+    }
+
+    query.role = roleFilter;
+
+    // Add search functionality
+    if (search) {
+      query.$or = [
+        { fullName: { $regex: search, $options: 'i' } },
+        { email: { $regex: search, $options: 'i' } },
+        { phone: { $regex: search, $options: 'i' } }
+      ];
+    }
+
+    const users = await User.find(query)
+      .select('fullName email phone address dateOfBirth password createdAt role')
+      .sort({ createdAt: -1 })
+      .skip(skip)
+      .limit(parseInt(limit));
+
+    const totalUsers = await User.countDocuments(query);
+
+    const accountsData = users.map(user => {
+      // Mask password for security
+      const maskedPassword = user.password ? 'Sxxxxxx909990' : 'No password';
+      
+      return {
+        id: user._id,
+        name: user.fullName || 'User',
+        phone: user.phone || 'Not provided',
+        address: user.address || 'Address not specified',
+        email: user.email || 'No email',
+        dob: user.dateOfBirth ? new Date(user.dateOfBirth).toLocaleDateString('en-GB') : 'Not provided',
+        password: maskedPassword,
+        role: user.role,
+        joinDate: user.createdAt,
+        avatar: user.fullName ? user.fullName.split(' ').map(n => n[0]).join('') : 'U'
+      };
+    });
+
+    res.json({
+      success: true,
+      accounts: accountsData,
+      pagination: {
+        current: parseInt(page),
+        pages: Math.ceil(totalUsers / limit),
+        total: totalUsers,
+        showing: accountsData.length
+      }
+    });
+  } catch (err) {
+    console.error('Accounts error:', err);
+    next(err);
+  }
+};
+
+// DELETE /api/admins/accounts
+export const deleteAccounts = async (req, res, next) => {
+  try {
+    const requester = req.user;
+    if (![ROLES.SUPER_ADMIN, ROLES.ADMIN_HEAD].includes(requester.role)) {
+      return res.status(403).json({ message: 'Forbidden' });
+    }
+
+    const { accountIds } = req.body;
+
+    if (!accountIds || !Array.isArray(accountIds) || accountIds.length === 0) {
+      return res.status(400).json({ message: 'No account IDs provided' });
+    }
+
+    // Prevent deletion of super admin accounts
+    const superAdminAccounts = await User.find({
+      _id: { $in: accountIds },
+      role: ROLES.SUPER_ADMIN
+    });
+
+    if (superAdminAccounts.length > 0 && requester.role !== ROLES.SUPER_ADMIN) {
+      return res.status(403).json({ 
+        message: 'Cannot delete super admin accounts' 
+      });
+    }
+
+    // Delete accounts
+    const result = await User.deleteMany({
+      _id: { $in: accountIds }
+    });
+
+    res.json({
+      success: true,
+      message: `Successfully deleted ${result.deletedCount} accounts`,
+      deletedCount: result.deletedCount
+    });
+  } catch (err) {
+    console.error('Delete accounts error:', err);
+    next(err);
+  }
+};
+
+// PUT /api/admins/accounts/:id
+export const updateAccount = async (req, res, next) => {
+  try {
+    const requester = req.user;
+    if (![ROLES.SUPER_ADMIN, ROLES.ADMIN_HEAD].includes(requester.role)) {
+      return res.status(403).json({ message: 'Forbidden' });
+    }
+
+    const { id } = req.params;
+    const updateData = req.body;
+
+    // Remove sensitive fields that shouldn't be updated
+    delete updateData.password;
+    delete updateData.role; // Role changes should be handled separately
+
+    const updatedUser = await User.findByIdAndUpdate(
+      id,
+      updateData,
+      { new: true, runValidators: true }
+    ).select('-password');
+
+    if (!updatedUser) {
+      return res.status(404).json({ message: 'Account not found' });
+    }
+
+    res.json({
+      success: true,
+      message: 'Account updated successfully',
+      account: updatedUser
+    });
+  } catch (err) {
+    console.error('Update account error:', err);
+    next(err);
+  }
+};
 // ==================== COMPLAINT MANAGEMENT ====================
 
 // GET /api/admins/complaints -> SUPER_ADMIN, ADMIN_HEAD, ADMIN_CUSTOMER_SERVICE
