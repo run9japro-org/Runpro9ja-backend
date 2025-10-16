@@ -457,6 +457,140 @@ export const getAllEmployees = async (req, res, next) => {
   }
 };
 
+// Add these functions to your adminController.js
+
+// GET /api/admins/top-agents
+export const getTopAgents = async (req, res, next) => {
+  try {
+    const requester = req.user;
+    const allowedRoles = [ROLES.SUPER_ADMIN, ROLES.ADMIN_HEAD, ROLES.ADMIN_AGENT_SERVICE];
+    if (!allowedRoles.includes(requester.role)) {
+      return res.status(403).json({ message: 'Forbidden' });
+    }
+
+    const { limit = 10 } = req.query;
+
+    // Get top agents by completed orders and ratings
+    const topAgents = await AgentProfile.aggregate([
+      {
+        $lookup: {
+          from: 'users',
+          localField: 'user',
+          foreignField: '_id',
+          as: 'userInfo'
+        }
+      },
+      {
+        $lookup: {
+          from: 'orders',
+          localField: 'user',
+          foreignField: 'agent',
+          as: 'orders'
+        }
+      },
+      {
+        $addFields: {
+          user: { $arrayElemAt: ['$userInfo', 0] },
+          completedOrders: {
+            $size: {
+              $filter: {
+                input: '$orders',
+                as: 'order',
+                cond: { $eq: ['$$order.status', 'completed'] }
+              }
+            }
+          },
+          totalOrders: { $size: '$orders' },
+          workRate: {
+            $cond: {
+              if: { $gt: ['$totalOrders', 0] },
+              then: {
+                $multiply: [
+                  { $divide: ['$completedOrders', '$totalOrders'] },
+                  100
+                ]
+              },
+              else: 0
+            }
+          }
+        }
+      },
+      {
+        $project: {
+          'user.password': 0,
+          'user.otpCode': 0,
+          'user.otpExpiresAt': 0,
+          orders: 0,
+          userInfo: 0
+        }
+      },
+      {
+        $sort: { workRate: -1, completedOrders: -1 }
+      },
+      {
+        $limit: parseInt(limit)
+      }
+    ]);
+
+    res.json({
+      success: true,
+      agents: topAgents.map(agent => ({
+        id: agent._id,
+        agentId: `AG${agent._id.toString().slice(-6)}`,
+        name: agent.user?.fullName || 'Unknown',
+        service: agent.serviceType || 'General Service',
+        status: agent.isVerified ? 'Active' : 'Inactive',
+        workRate: Math.round(agent.workRate),
+        profileImage: agent.user?.profileImage,
+        completedOrders: agent.completedOrders,
+        totalOrders: agent.totalOrders
+      }))
+    });
+  } catch (err) {
+    console.error('Top agents error:', err);
+    next(err);
+  }
+};
+
+// GET /api/admins/recent-payments
+export const getRecentPayments = async (req, res, next) => {
+  try {
+    const requester = req.user;
+    if (![ROLES.SUPER_ADMIN, ROLES.ADMIN_HEAD].includes(requester.role)) {
+      return res.status(403).json({ message: 'Forbidden' });
+    }
+
+    const { limit = 10 } = req.query;
+
+    const recentPayments = await Payment.find({})
+      .populate('user', 'fullName email')
+      .populate({
+        path: 'order',
+        populate: {
+          path: 'serviceCategory',
+          select: 'name'
+        }
+      })
+      .sort({ createdAt: -1 })
+      .limit(parseInt(limit));
+
+    res.json({
+      success: true,
+      payments: recentPayments.map(payment => ({
+        id: payment._id,
+        name: payment.user?.fullName || 'Unknown Customer',
+        service: payment.order?.serviceCategory?.name || 'Unknown Service',
+        amount: payment.amount,
+        status: payment.status,
+        date: payment.createdAt,
+        currency: payment.currency || 'NGN'
+      }))
+    });
+  } catch (err) {
+    console.error('Recent payments error:', err);
+    next(err);
+  }
+};
 // ==================== PAYMENT MANAGEMENT ====================
 
 // GET /api/admins/payments -> SUPER_ADMIN, ADMIN_HEAD
