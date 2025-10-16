@@ -172,240 +172,124 @@ const createAgentBio = (agent) => {
   return parts.join(' • ') || 'Professional service provider';
 };
 // Get available agents for customers to choose from
-// In your adminController.js - fix the functions for your Order model structure
-
-// GET /api/admins/service-requests
-export const getServiceRequests = async (req, res, next) => {
+export const getAvailableAgents = async (req, res, next) => {
   try {
-    const requester = req.user;
-    const allowedRoles = [ROLES.SUPER_ADMIN, ROLES.ADMIN_HEAD, ROLES.ADMIN_AGENT_SERVICE, ROLES.ADMIN_CUSTOMER_SERVICE];
-    if (!allowedRoles.includes(requester.role)) {
-      return res.status(403).json({ message: 'Forbidden' });
-    }
+    const { serviceType, categoryId } = req.query;
+    
+    console.log('🔍 Finding available agents for service:', serviceType);
 
-    const { limit = 50, status } = req.query;
-
-    // Build query based on your Order model structure
+    // Build query based on service type
     let query = {};
-    if (status) {
-      // Since status is in timeline array, we need to find the latest status
-      query['timeline.status'] = status;
+
+    // Filter by service type if provided
+    if (serviceType) {
+      query.serviceType = new RegExp(serviceType, 'i'); // Case-insensitive search
     }
 
-    const orders = await Order.find(query)
-      .populate('customer', 'fullName email phone')
-      .populate('agent', 'fullName')
-      .populate('serviceCategory', 'name')
-      .sort({ createdAt: -1 })
-      .limit(parseInt(limit));
+    // Alternative: Filter by service category ID if provided
+    if (categoryId) {
+      query.services = categoryId;
+    }
 
-    // Transform data to match your frontend structure
-    const serviceRequests = orders.map(order => {
-      // Get the latest status from timeline
-      const latestStatus = order.timeline && order.timeline.length > 0 
-        ? order.timeline[order.timeline.length - 1].status 
-        : 'requested';
+    // Find available agents and populate user data
+    const agents = await AgentProfile.find(query)
+      .populate('user', 'fullName email phone')
+      .populate('services', 'name description');
+
+    console.log(`✅ Found ${agents.length} agents for service: ${serviceType}`);
+
+    // Format the response for customers
+    const availableAgents = agents.map(agent => {
+      // Calculate realistic price based on service type and experience
+      const price = calculateDeliveryPrice(
+        agent.serviceType, 
+        agent.yearsOfExperience,
+        agent.servicesOffered
+      );
       
-      // Format status for display
-      const displayStatus = formatStatusForDisplay(latestStatus);
+      // Determine vehicle type based on service
+      const vehicleType = getVehicleType(agent.serviceType);
       
+      // Create agent bio from available data
+      const bio = createAgentBio(agent);
+
       return {
-        requestId: `IP-${order._id.toString().slice(-4).toUpperCase()}`,
-        customerName: order.customer?.fullName || 'Unknown Customer',
-        serviceType: order.serviceCategory?.name || 'General Service',
-        status: displayStatus,
-        dueDate: order.scheduledDate 
-          ? new Date(order.scheduledDate).toLocaleDateString('en-GB') 
-          : 'Not scheduled',
-        originalOrder: order
+        _id: agent._id,
+        user: {
+          _id: agent.user?._id || 'unknown',
+          fullName: agent.user?.fullName || 'Unknown Agent',
+          email: agent.user?.email || '',
+          phone: agent.user?.phone || ''
+        },
+        profileImage: agent.profileImage,
+        rating: agent.rating || 4.5,
+        completedJobs: agent.completedJobs || 0,
+        isVerified: agent.isVerified || false,
+        serviceType: agent.serviceType,
+        yearsOfExperience: agent.yearsOfExperience,
+        servicesOffered: agent.servicesOffered,
+        areasOfExpertise: agent.areasOfExpertise,
+        availability: agent.availability,
+        summary: agent.summary,
+        bio: agent.bio || bio,
+        location: agent.location,
+        distance: (Math.random() * 5 + 1).toFixed(1),
+        price: price,
+        vehicleType: vehicleType,
+        // Include service categories for filtering
+        serviceCategories: agent.services || []
       };
     });
 
-    // If no orders found, return some sample data
-    if (serviceRequests.length === 0) {
-      return res.json({
-        success: true,
-        serviceRequests: getSampleServiceRequests(),
-        total: 0,
-        message: 'No service requests found'
-      });
-    }
+    res.json({
+      success: true,
+      agents: availableAgents,
+      count: availableAgents.length,
+      message: `Found ${availableAgents.length} available agents${serviceType ? ` for ${serviceType}` : ''}`
+    });
 
-    res.json({
-      success: true,
-      serviceRequests,
-      total: serviceRequests.length
-    });
-  } catch (err) {
-    console.error('Service requests error:', err);
-    // Return sample data on error
-    res.json({
-      success: true,
-      serviceRequests: getSampleServiceRequests(),
-      total: 0
-    });
+  } catch (e) {
+    console.error('Error fetching available agents:', e);
+    next(e);
   }
 };
-
-// GET /api/admins/delivery-details
-export const getDeliveryDetails = async (req, res, next) => {
+// Add this to your agent controller
+export const getAgentsForProfessionalService = async (req, res, next) => {
   try {
-    const requester = req.user;
-    const allowedRoles = [ROLES.SUPER_ADMIN, ROLES.ADMIN_HEAD, ROLES.ADMIN_AGENT_SERVICE];
-    if (!allowedRoles.includes(requester.role)) {
-      return res.status(403).json({ message: 'Forbidden' });
+    const { categoryId, serviceType } = req.query;
+    
+    let query = { 
+      isVerified: true,
+      availability: 'available'
+    };
+
+    // Filter by service category
+    if (categoryId) {
+      query.services = categoryId;
     }
 
-    const { limit = 20 } = req.query;
-
-    // Get orders that involve delivery services or have location data
-    const deliveryOrders = await Order.find({
-      $or: [
-        { 'serviceCategory.name': { $regex: /delivery|errand|pickup|dispatch/i } },
-        { location: { $exists: true, $ne: '' } },
-        { deliveryUpdates: { $exists: true, $not: { $size: 0 } } }
-      ]
-    })
-      .populate('customer', 'fullName email phone')
-      .populate('agent', 'fullName')
-      .populate('serviceCategory', 'name')
-      .sort({ createdAt: -1 })
-      .limit(parseInt(limit));
-
-    const deliveryDetails = deliveryOrders.map(order => {
-      const serviceType = order.serviceCategory?.name || 'Delivery Service';
-      const latestStatus = order.timeline && order.timeline.length > 0 
-        ? order.timeline[order.timeline.length - 1].status 
-        : 'requested';
-      
-      return {
-        orderId: `RP-${order._id.toString().slice(-3)}`,
-        deliveryType: serviceType.length > 15 ? serviceType.substring(0, 15) + '...' : serviceType,
-        pickupDestination: formatPickupDestination(order),
-        date: order.scheduledDate 
-          ? new Date(order.scheduledDate).toLocaleDateString('en-GB') 
-          : order.createdAt 
-          ? new Date(order.createdAt).toLocaleDateString('en-GB')
-          : 'N/A',
-        estimatedTime: order.estimatedDuration 
-          ? `${Math.ceil(order.estimatedDuration / 60)} Hours` 
-          : '2 Hours',
-        riderInCharge: order.agent?.fullName || 'Not assigned',
-        orderBy: order.customer?.fullName || 'Unknown Customer',
-        deliveredTo: order.customer?.fullName || 'Unknown Customer',
-        status: latestStatus,
-        originalOrder: order
-      };
-    });
-
-    // If no delivery orders found, return sample data
-    if (deliveryDetails.length === 0) {
-      return res.json({
-        success: true,
-        deliveryDetails: getSampleDeliveryDetails(),
-        total: 0,
-        message: 'No delivery orders found'
-      });
+    // Filter by service type
+    if (serviceType) {
+      query.serviceType = new RegExp(serviceType, 'i');
     }
+
+    const agents = await AgentProfile.find(query)
+      .populate('user', 'fullName email phone profileImage')
+      .populate('services', 'name description')
+      .sort({ rating: -1, completedJobs: -1 }) // Sort by rating and experience
+      .limit(10); // Limit to top 10 agents
 
     res.json({
       success: true,
-      deliveryDetails,
-      total: deliveryDetails.length
+      agents: agents,
+      count: agents.length,
+      message: `Found ${agents.length} professional agents`
     });
-  } catch (err) {
-    console.error('Delivery details error:', err);
-    // Return sample data on error
-    res.json({
-      success: true,
-      deliveryDetails: getSampleDeliveryDetails(),
-      total: 0
-    });
+
+  } catch (e) {
+    console.error('Error fetching professional agents:', e);
+    next(e);
   }
-};
-
-// Helper function to format status for display
-const formatStatusForDisplay = (status) => {
-  const statusMap = {
-    'requested': 'Pending',
-    'inspection_scheduled': 'Inspection Scheduled',
-    'inspection_completed': 'Inspection Completed',
-    'quotation_provided': 'Quotation Provided',
-    'quotation_accepted': 'Quotation Accepted',
-    'agent_selected': 'Agent Selected',
-    'accepted': 'Accepted',
-    'rejected': 'Rejected',
-    'in-progress': 'In Progress',
-    'completed': 'Completed',
-    'cancelled': 'Cancelled'
-  };
-  
-  return statusMap[status] || status;
-};
-
-// Helper function to format pickup destination
-const formatPickupDestination = (order) => {
-  if (order.location) {
-    return `Location: ${order.location}`;
-  }
-  if (order.deliveryUpdates && order.deliveryUpdates.length > 0) {
-    const firstUpdate = order.deliveryUpdates[0];
-    const lastUpdate = order.deliveryUpdates[order.deliveryUpdates.length - 1];
-    return `From: [${firstUpdate.coordinates[0]}, ${firstUpdate.coordinates[1]}] To: [${lastUpdate.coordinates[0]}, ${lastUpdate.coordinates[1]}]`;
-  }
-  return 'Location not specified';
-};
-
-// Sample data functions
-const getSampleServiceRequests = () => {
-  return [
-    {
-      requestId: "IP-001",
-      customerName: "Adejabola Ayomide",
-      serviceType: "Babysitting",
-      status: "In Progress",
-      dueDate: "15/06/2025",
-    },
-    {
-      requestId: "IP-002",
-      customerName: "Chinedu Okoro",
-      serviceType: "Plumbing",
-      status: "Completed",
-      dueDate: "10/06/2025",
-    },
-    {
-      requestId: "IP-003",
-      customerName: "Funke Adebayo",
-      serviceType: "Cleaning",
-      status: "Pending",
-      dueDate: "20/06/2025",
-    },
-  ];
-};
-
-const getSampleDeliveryDetails = () => {
-  return [
-    {
-      orderId: "RP-267",
-      deliveryType: "Errand service",
-      pickupDestination: "From: Jeobel, Atakuko To: Quanna Micaline, Lekki Teligate",
-      date: "09/10/25",
-      estimatedTime: "2 Hours",
-      riderInCharge: "Samuel Biyomi",
-      orderBy: "Mariam Hassan",
-      deliveredTo: "Mariam Hassan",
-    },
-    {
-      orderId: "RP-268",
-      deliveryType: "Dispatch delivery",
-      pickupDestination: "From: 23. Sukenu Qie Road Casso To: Quanna Micaline, Lekki Teligate",
-      date: "09/10/25",
-      estimatedTime: "2 Hours",
-      riderInCharge: "Samuel Biyomi",
-      orderBy: "Mariam Hassan",
-      deliveredTo: "Chakouma Berry",
-    },
-  ];
 };
 export const updateAgentLocation = async (req, res) => {
   try {
