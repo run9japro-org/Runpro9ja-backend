@@ -1524,49 +1524,27 @@ const calculateGrowth = (period) => {
 // Add to your adminController.js
 
 // GET /api/admins/accounts
-export const getAccounts = async (req, res, next) => {
+export const getAccounts = async (req, res) => {
   try {
-    const requester = req.user;
-    if (![ROLES.SUPER_ADMIN, ROLES.ADMIN_HEAD].includes(requester.role)) {
-      return res.status(403).json({ message: 'Forbidden' });
+    const { type, page = 1, limit = 10, search = '' } = req.query;
+    const query = {};
+
+    // Map frontend tab types to role(s)
+    if (type === 'customer-care') {
+      query.role = ROLES.ADMIN_CUSTOMER_SERVICE;
+    } else if (type === 'agent-service') {
+      query.role = ROLES.ADMIN_AGENT_SERVICE;
+    } else if (type === 'representative') {
+      query.role = ROLES.REPRESENTATIVE;
+    } else if (type === 'service-providers') {
+      query.role = ROLES.AGENT;
+    } else if (type === 'customers') {
+      query.role = ROLES.CUSTOMER;
+    } else if (type === 'admins') {
+      query.role = { $in: [ROLES.SUPER_ADMIN, ROLES.ADMIN_HEAD] };
     }
 
-    const { 
-      type = 'users', // users, service-provider, customer-care
-      page = 1, 
-      limit = 13,
-      search = ''
-    } = req.query;
-
-    const skip = (page - 1) * limit;
-
-    // Build query based on account type
-    let query = {};
-    let roleFilter = {};
-
-    switch (type) {
-      case 'users':
-        roleFilter = { 
-          $in: [ROLES.USER, ROLES.CUSTOMER] 
-        };
-        break;
-      case 'service-provider':
-        roleFilter = { 
-          $in: [ROLES.AGENT, ROLES.PROVIDER] 
-        };
-        break;
-      case 'customer-care':
-        roleFilter = { 
-          $in: [ROLES.ADMIN_CUSTOMER_SERVICE] 
-        };
-        break;
-      default:
-        roleFilter = { $in: [ROLES.USER, ROLES.CUSTOMER] };
-    }
-
-    query.role = roleFilter;
-
-    // Add search functionality
+    // Optional text search
     if (search) {
       query.$or = [
         { fullName: { $regex: search, $options: 'i' } },
@@ -1575,47 +1553,29 @@ export const getAccounts = async (req, res, next) => {
       ];
     }
 
-    const users = await User.find(query)
-      .select('fullName email phone address dateOfBirth password createdAt role')
-      .sort({ createdAt: -1 })
-      .skip(skip)
-      .limit(parseInt(limit));
-
-    const totalUsers = await User.countDocuments(query);
-
-    const accountsData = users.map(user => {
-      // Mask password for security
-      const maskedPassword = user.password ? 'Sxxxxxx909990' : 'No password';
-      
-      return {
-        id: user._id,
-        name: user.fullName || 'User',
-        phone: user.phone || 'Not provided',
-        address: user.address || 'Address not specified',
-        email: user.email || 'No email',
-        dob: user.dateOfBirth ? new Date(user.dateOfBirth).toLocaleDateString('en-GB') : 'Not provided',
-        password: maskedPassword,
-        role: user.role,
-        joinDate: user.createdAt,
-        avatar: user.fullName ? user.fullName.split(' ').map(n => n[0]).join('') : 'U'
-      };
-    });
+    const skip = (Number(page) - 1) * Number(limit);
+    const [accounts, total] = await Promise.all([
+      User.find(query)
+        .sort({ createdAt: -1 })
+        .skip(skip)
+        .limit(Number(limit))
+        .select('-password -otpCode -resetPasswordToken'),
+      User.countDocuments(query)
+    ]);
 
     res.json({
       success: true,
-      accounts: accountsData,
-      pagination: {
-        current: parseInt(page),
-        pages: Math.ceil(totalUsers / limit),
-        total: totalUsers,
-        showing: accountsData.length
-      }
+      total,
+      page: Number(page),
+      totalPages: Math.ceil(total / limit),
+      data: accounts
     });
-  } catch (err) {
-    console.error('Accounts error:', err);
-    next(err);
+  } catch (error) {
+    console.error('getAccounts error:', error);
+    res.status(500).json({ success: false, message: 'Failed to fetch accounts', error: error.message });
   }
 };
+
 
 // DELETE /api/admins/accounts
 export const deleteAccounts = async (req, res, next) => {
