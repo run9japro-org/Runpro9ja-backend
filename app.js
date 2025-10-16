@@ -31,6 +31,7 @@ import { initSocket } from "./src/socket.js";
 const app = express();
 const server = http.createServer(app);
 
+import complaints from "./src/routes/complaints.js";
 // Init Socket.io
 initSocket(server);
 
@@ -89,7 +90,7 @@ app.use("/api/chat", chatRoutes);
 app.use("/api/notifications", notificationRoutes);
 app.use("/api/admin", adminRoutes);
 app.use("/api/withdrawals", withdrawalRoutes);
-
+app.use('/api/complaints', complaints);
 
 // Add to your routes section:
 // app.use("/api/calls", callRoutes);

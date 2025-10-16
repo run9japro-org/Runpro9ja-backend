@@ -12,7 +12,7 @@ import { notifyUser } from "../services/notificationService.js";
 
 export const createAdmin = async (req, res, next) => {
   try {
-    // Only super_admin or head_admin can create admins
+    // Ensure only SUPER_ADMIN or HEAD_ADMIN can create new admins
     if (![ROLES.SUPER_ADMIN, ROLES.HEAD_ADMIN].includes(req.user.role)) {
       return res.status(403).json({
         success: false,
@@ -20,36 +20,64 @@ export const createAdmin = async (req, res, next) => {
       });
     }
 
-    const { username, fullName } = req.body;
-    if (!username || !fullName) {
+    const { username, fullName, role } = req.body;
+
+    // Validate input
+    if (!username || !fullName || !role) {
       return res.status(400).json({
         success: false,
-        message: "Username and full name are required.",
+        message: "Username, full name, and role are required.",
       });
     }
 
-    // Generate secure password
+    // Prevent assigning unauthorized roles
+    const allowedRoles = [
+      ROLES.ADMIN_CUSTOMER_SERVICE,
+      ROLES.ADMIN_AGENT_SERVICE,
+      ROLES.REPRESENTATIVE,
+      ROLES.HEAD_ADMIN, // optional if Super Admin can create Head Admins
+    ];
+
+    if (!allowedRoles.includes(role)) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid role. You can only create support/admin-level users.",
+      });
+    }
+
+    // Check if username already exists
+    const existing = await User.findOne({ username });
+    if (existing) {
+      return res.status(409).json({
+        success: false,
+        message: "Username already exists. Please choose another.",
+      });
+    }
+
+    // Generate and hash a strong password
     const rawPassword = generateStrongPassword();
     const hashedPassword = await bcrypt.hash(rawPassword, 10);
 
-    const admin = await User.create({
+    // Create admin account
+    const newAdmin = await User.create({
       username,
       fullName,
-      role: ROLES.ADMIN,
+      role,
       password: hashedPassword,
-      passwordLastRotated: new Date(),
       isVerified: true,
+      passwordLastRotated: new Date(),
     });
 
-    // Optional notification (if using your service)
-    await notifyUser(admin._id, "WELCOME");
+    // Optional notification
+    await notifyUser(newAdmin._id, "WELCOME");
 
     return res.status(201).json({
       success: true,
-      message: "Admin created successfully.",
+      message: `${role} account created successfully.`,
       data: {
-        username: admin.username,
-        password: rawPassword, // show once for them to note down
+        username: newAdmin.username,
+        temporaryPassword: rawPassword, // shown once for secure handoff
+        role: newAdmin.role,
       },
     });
   } catch (err) {
@@ -1764,4 +1792,513 @@ export const listAdmins = async (req, res, next) => {
   } catch (err) {
     next(err);
   }
+};
+
+// ==================== DASHBOARD APIs ====================
+
+// GET /api/admins/dashboard/overview
+export const getDashboardOverview = async (req, res, next) => {
+  try {
+    const requester = req.user;
+    const allowedRoles = [ROLES.SUPER_ADMIN, ROLES.ADMIN_HEAD, ROLES.ADMIN_AGENT_SERVICE, ROLES.ADMIN_CUSTOMER_SERVICE];
+    if (!allowedRoles.includes(requester.role)) {
+      return res.status(403).json({ message: 'Forbidden' });
+    }
+
+    const { period = 'week' } = req.query;
+    const now = new Date();
+    let startDate;
+
+    // Calculate date range based on period
+    switch (period) {
+      case 'today':
+        startDate = new Date(now);
+        startDate.setHours(0, 0, 0, 0);
+        break;
+      case 'week':
+        startDate = new Date(now);
+        startDate.setDate(startDate.getDate() - 7);
+        break;
+      case 'month':
+        startDate = new Date(now);
+        startDate.setMonth(startDate.getMonth() - 1);
+        break;
+      case 'year':
+        startDate = new Date(now);
+        startDate.setFullYear(startDate.getFullYear() - 1);
+        break;
+      default:
+        startDate = new Date(now);
+        startDate.setDate(startDate.getDate() - 7);
+    }
+
+    // Get total counts
+    const totalUsers = await User.countDocuments();
+    const totalAgents = await AgentProfile.countDocuments();
+    const totalOrders = await Order.countDocuments();
+    
+    // Get open cases (pending orders + complaints)
+    const openCases = await Order.countDocuments({
+      'timeline.status': { $in: ['requested', 'accepted', 'in-progress'] }
+    });
+
+    // Get priority queue (orders with high/urgent priority)
+    const priorityQueue = await Order.countDocuments({
+      priority: { $in: ['High', 'Urgent'] },
+      'timeline.status': { $in: ['requested', 'accepted', 'in-progress'] }
+    });
+
+    // Get pending follow-up (orders that need attention)
+    const pendingFollowUp = await Order.countDocuments({
+      'timeline.status': 'in-progress',
+      updatedAt: { $lte: new Date(Date.now() - 24 * 60 * 60 * 1000) } // Older than 24 hours
+    });
+
+    // Get period-specific stats
+    const newUsers = await User.countDocuments({ createdAt: { $gte: startDate } });
+    const newAgents = await AgentProfile.countDocuments({ createdAt: { $gte: startDate } });
+    const periodOrders = await Order.countDocuments({ createdAt: { $gte: startDate } });
+
+    // Revenue calculation
+    const totalRevenue = await Payment.aggregate([
+      { $match: { status: 'success' } },
+      { $group: { _id: null, total: { $sum: '$amount' } } }
+    ]);
+
+    const periodRevenue = await Payment.aggregate([
+      { 
+        $match: { 
+          status: 'success', 
+          createdAt: { $gte: startDate } 
+        } 
+      },
+      { $group: { _id: null, total: { $sum: '$amount' } } }
+    ]);
+
+    // Monthly complaint rate data (last 12 months)
+    const twelveMonthsAgo = new Date();
+    twelveMonthsAgo.setMonth(twelveMonthsAgo.getMonth() - 12);
+
+    const monthlyOrders = await Order.aggregate([
+      {
+        $match: {
+          createdAt: { $gte: twelveMonthsAgo }
+        }
+      },
+      {
+        $group: {
+          _id: {
+            year: { $year: '$createdAt' },
+            month: { $month: '$createdAt' }
+          },
+          customerOrders: {
+            $sum: {
+              $cond: [{ $eq: ['$orderType', 'customer'] }, 1, 0]
+            }
+          },
+          serviceOrders: {
+            $sum: {
+              $cond: [{ $eq: ['$orderType', 'service'] }, 1, 0]
+            }
+          },
+          total: { $sum: 1 }
+        }
+      },
+      {
+        $sort: { '_id.year': 1, '_id.month': 1 }
+      }
+    ]);
+
+    // Format monthly data for chart
+    const monthlyData = monthlyOrders.map(item => {
+      const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'July', 'Aug', 'Sept', 'Oct', 'Nov', 'Dec'];
+      return {
+        month: monthNames[item._id.month - 1],
+        customers: item.customerOrders || 0,
+        service: item.serviceOrders || 0,
+        total: item.total || 0
+      };
+    });
+
+    // Response time metrics (based on actual order response times)
+    const responseTimeStats = await Order.aggregate([
+      {
+        $match: {
+          'timeline': { $exists: true, $ne: [] },
+          createdAt: { $gte: startDate }
+        }
+      },
+      {
+        $project: {
+          responseTime: {
+            $divide: [
+              {
+                $subtract: [
+                  { $arrayElemAt: ['$timeline.createdAt', 0] }, // First timeline entry
+                  '$createdAt'
+                ]
+              },
+              1000 * 60 * 60 // Convert to hours
+            ]
+          }
+        }
+      },
+      {
+        $bucket: {
+          groupBy: "$responseTime",
+          boundaries: [0, 1, 2, 4, 8, 16, 24, Number.MAX_SAFE_INTEGER],
+          default: "other",
+          output: {
+            count: { $sum: 1 }
+          }
+        }
+      }
+    ]);
+
+    // Format response data for chart
+    const responseLabels = ['<1 hour', '<2 hours', '2-4 hours', '4-8 hours', '8-16 hours', '>24 hours'];
+    const responseColors = [
+      'bg-emerald-600',
+      'bg-emerald-500', 
+      'bg-emerald-400',
+      'bg-emerald-300',
+      'bg-emerald-200',
+      'bg-gray-300'
+    ];
+
+    const responseData = responseTimeStats.map((stat, index) => ({
+      label: responseLabels[index] || 'Other',
+      value: stat.count || 0,
+      color: responseColors[index] || 'bg-gray-400'
+    }));
+
+    // Channel metrics (service categories)
+    const channelMetrics = await Order.aggregate([
+      {
+        $match: {
+          createdAt: { $gte: startDate }
+        }
+      },
+      {
+        $group: {
+          _id: '$serviceCategory',
+          count: { $sum: 1 }
+        }
+      },
+      {
+        $sort: { count: -1 }
+      }
+    ]);
+
+    // Populate service category names and format for frontend
+    const channels = await Promise.all(
+      channelMetrics.map(async (metric) => {
+        const service = await ServiceCategory.findById(metric._id);
+        const channelMap = {
+          'Laundry': { icon: '🐦', color: 'text-blue-500' },
+          'Cleaning': { icon: '📷', color: 'text-pink-500' },
+          'Maintenance': { icon: '👍', color: 'text-blue-600' },
+          'Delivery': { icon: '🚚', color: 'text-green-500' },
+          'Beauty': { icon: '💅', color: 'text-purple-500' },
+          'Other': { icon: '✉️', color: 'text-gray-600' }
+        };
+
+        const serviceName = service?.name || 'Other';
+        const channelInfo = channelMap[serviceName] || { icon: '💬', color: 'text-emerald-600' };
+
+        return {
+          name: serviceName,
+          count: metric.count,
+          icon: channelInfo.icon,
+          color: channelInfo.color
+        };
+      })
+    );
+
+    // Recent assigned cases (last 6 orders)
+    const recentCases = await Order.find()
+      .populate('customer', 'fullName email')
+      .populate('serviceCategory', 'name')
+      .sort({ createdAt: -1 })
+      .limit(6)
+      .select('_id customer serviceCategory timeline createdAt');
+
+    const formattedCases = recentCases.map(order => {
+      const latestStatus = order.timeline && order.timeline.length > 0 
+        ? order.timeline[order.timeline.length - 1].status 
+        : 'requested';
+      
+      const statusDisplay = latestStatus === 'completed' ? 'Responded' : 'Not Responded';
+      
+      return {
+        id: order._id.toString().slice(-6).toUpperCase(),
+        name: order.customer?.fullName || 'Customer',
+        title: order.serviceCategory?.name ? `${order.serviceCategory.name} service request` : 'Service Request',
+        channel: order.serviceCategory?.name || 'General',
+        status: statusDisplay,
+        icon: getChannelIcon(order.serviceCategory?.name)
+      };
+    });
+
+    res.json({
+      success: true,
+      dashboard: {
+        stats: {
+          openCases,
+          priorityQueue,
+          pendingFollowUp,
+          totalUsers,
+          totalAgents,
+          totalOrders,
+          totalRevenue: totalRevenue[0]?.total || 0
+        },
+        periodStats: {
+          newUsers,
+          newAgents,
+          orders: periodOrders,
+          revenue: periodRevenue[0]?.total || 0
+        },
+        monthlyData,
+        responseData,
+        channels,
+        recentCases: formattedCases
+      }
+    });
+
+  } catch (err) {
+    console.error('Dashboard overview error:', err);
+    next(err);
+  }
+};
+
+// GET /api/admins/dashboard/analytics
+export const getDashboardAnalytics = async (req, res, next) => {
+  try {
+    const requester = req.user;
+    const allowedRoles = [ROLES.SUPER_ADMIN, ROLES.ADMIN_HEAD, ROLES.ADMIN_AGENT_SERVICE];
+    if (!allowedRoles.includes(requester.role)) {
+      return res.status(403).json({ message: 'Forbidden' });
+    }
+
+    const { period = '30days' } = req.query;
+    const now = new Date();
+    let dateFilter = {};
+
+    switch (period) {
+      case '7days':
+        dateFilter = { 
+          createdAt: { $gte: new Date(now.setDate(now.getDate() - 7)) } 
+        };
+        break;
+      case '30days':
+        dateFilter = { 
+          createdAt: { $gte: new Date(now.setDate(now.getDate() - 30)) } 
+        };
+        break;
+      case '90days':
+        dateFilter = { 
+          createdAt: { $gte: new Date(now.setDate(now.getDate() - 90)) } 
+        };
+        break;
+    }
+
+    // Order trends
+    const orderTrends = await Order.aggregate([
+      { $match: dateFilter },
+      {
+        $group: {
+          _id: {
+            $dateToString: { format: "%Y-%m-%d", date: "$createdAt" }
+          },
+          count: { $sum: 1 }
+        }
+      },
+      { $sort: { _id: 1 } }
+    ]);
+
+    // Revenue trends
+    const revenueTrends = await Payment.aggregate([
+      { 
+        $match: { 
+          status: 'success',
+          ...dateFilter 
+        } 
+      },
+      {
+        $group: {
+          _id: {
+            $dateToString: { format: "%Y-%m-%d", date: "$createdAt" }
+          },
+          revenue: { $sum: '$amount' }
+        }
+      },
+      { $sort: { _id: 1 } }
+    ]);
+
+    // User registration trends
+    const userTrends = await User.aggregate([
+      { $match: dateFilter },
+      {
+        $group: {
+          _id: {
+            $dateToString: { format: "%Y-%m-%d", date: "$createdAt" }
+          },
+          count: { $sum: 1 }
+        }
+      },
+      { $sort: { _id: 1 } }
+    ]);
+
+    // Agent registration trends
+    const agentTrends = await AgentProfile.aggregate([
+      { $match: dateFilter },
+      {
+        $group: {
+          _id: {
+            $dateToString: { format: "%Y-%m-%d", date: "$createdAt" }
+          },
+          count: { $sum: 1 }
+        }
+      },
+      { $sort: { _id: 1 } }
+    ]);
+
+    // Service category distribution
+    const serviceDistribution = await Order.aggregate([
+      { $match: dateFilter },
+      {
+        $group: {
+          _id: '$serviceCategory',
+          count: { $sum: 1 }
+        }
+      },
+      {
+        $sort: { count: -1 }
+      }
+    ]);
+
+    // Status distribution
+    const statusDistribution = await Order.aggregate([
+      { $match: dateFilter },
+      {
+        $unwind: '$timeline'
+      },
+      {
+        $group: {
+          _id: '$timeline.status',
+          count: { $sum: 1 }
+        }
+      }
+    ]);
+
+    res.json({
+      success: true,
+      analytics: {
+        period,
+        orderTrends,
+        revenueTrends,
+        userTrends,
+        agentTrends,
+        serviceDistribution,
+        statusDistribution
+      }
+    });
+
+  } catch (err) {
+    console.error('Dashboard analytics error:', err);
+    next(err);
+  }
+};
+
+// GET /api/admins/dashboard/quick-stats
+export const getQuickStats = async (req, res, next) => {
+  try {
+    const requester = req.user;
+    const allowedRoles = [ROLES.SUPER_ADMIN, ROLES.ADMIN_HEAD, ROLES.ADMIN_AGENT_SERVICE, ROLES.ADMIN_CUSTOMER_SERVICE];
+    if (!allowedRoles.includes(requester.role)) {
+      return res.status(403).json({ message: 'Forbidden' });
+    }
+
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const tomorrow = new Date(today);
+    tomorrow.setDate(tomorrow.getDate() + 1);
+
+    // Today's stats
+    const todayOrders = await Order.countDocuments({
+      createdAt: { $gte: today, $lt: tomorrow }
+    });
+
+    const todayRevenue = await Payment.aggregate([
+      {
+        $match: {
+          status: 'success',
+          createdAt: { $gte: today, $lt: tomorrow }
+        }
+      },
+      {
+        $group: {
+          _id: null,
+          total: { $sum: '$amount' }
+        }
+      }
+    ]);
+
+    const todayUsers = await User.countDocuments({
+      createdAt: { $gte: today, $lt: tomorrow }
+    });
+
+    const todayAgents = await AgentProfile.countDocuments({
+      createdAt: { $gte: today, $lt: tomorrow }
+    });
+
+    // Pending actions
+    const pendingVerifications = await AgentProfile.countDocuments({
+      verificationStatus: 'pending'
+    });
+
+    const pendingOrders = await Order.countDocuments({
+      'timeline.status': 'requested'
+    });
+
+    const pendingPayments = await Payment.countDocuments({
+      status: 'pending'
+    });
+
+    res.json({
+      success: true,
+      quickStats: {
+        today: {
+          orders: todayOrders,
+          revenue: todayRevenue[0]?.total || 0,
+          users: todayUsers,
+          agents: todayAgents
+        },
+        pending: {
+          verifications: pendingVerifications,
+          orders: pendingOrders,
+          payments: pendingPayments
+        }
+      }
+    });
+
+  } catch (err) {
+    console.error('Quick stats error:', err);
+    next(err);
+  }
+};
+
+// Helper function to get channel icons
+const getChannelIcon = (serviceName) => {
+  const iconMap = {
+    'Laundry': '🐦',
+    'Cleaning': '📷',
+    'Maintenance': '💬',
+    'Delivery': '🚚',
+    'Beauty': '💅',
+    'Plumbing': '🔧',
+    'Electrical': '⚡',
+    'Carpentry': '🪚'
+  };
+  return iconMap[serviceName] || '💬';
 };
