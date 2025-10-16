@@ -3,7 +3,7 @@ import { generateNumericOtp } from '../utils/generateOtp.js';
 import { sendOtpEmail,sendPasswordResetEmail } from '../services/emailService.js';
 import { issueToken } from '../middlewares/auth.js';
 import crypto from 'crypto';
-
+import bcrypt from "bcryptjs";
 const OTP_TTL_MINUTES = 10;
 
 
