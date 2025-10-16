@@ -802,6 +802,80 @@ export const getDeliveryDetails = async (req, res, next) => {
   }
 };
 
+// Add to your adminController.js
+export const getActiveDeliveries = async (req, res, next) => {
+  try {
+    const requester = req.user;
+    const allowedRoles = [ROLES.SUPER_ADMIN, ROLES.ADMIN_HEAD, ROLES.ADMIN_AGENT_SERVICE];
+    if (!allowedRoles.includes(requester.role)) {
+      return res.status(403).json({ message: 'Forbidden' });
+    }
+
+    // Get orders that are in progress or have delivery updates
+    const activeOrders = await Order.find({
+      $or: [
+        { 'timeline.status': 'in-progress' },
+        { 'timeline.status': 'accepted' },
+        { deliveryUpdates: { $exists: true, $not: { $size: 0 } } }
+      ]
+    })
+      .populate('customer', 'fullName email phone')
+      .populate('agent', 'fullName')
+      .populate('serviceCategory', 'name')
+      .sort({ updatedAt: -1 });
+
+    const deliveries = activeOrders.map(order => {
+      const latestStatus = order.timeline && order.timeline.length > 0 
+        ? order.timeline[order.timeline.length - 1].status 
+        : 'requested';
+      
+      // Get the latest location from deliveryUpdates or use a default
+      let location = [6.5244, 3.3792]; // Default to Victoria Island
+      if (order.deliveryUpdates && order.deliveryUpdates.length > 0) {
+        const latestUpdate = order.deliveryUpdates[order.deliveryUpdates.length - 1];
+        location = latestUpdate.coordinates;
+      } else if (order.currentLocation && order.currentLocation.coordinates) {
+        location = order.currentLocation.coordinates;
+      }
+
+      return {
+        id: order._id,
+        orderId: `DL-${order._id.toString().slice(-4)}`,
+        location: location,
+        name: order.customer?.fullName || 'Customer',
+        address: order.location || 'Location not specified',
+        status: formatDeliveryStatus(latestStatus),
+        rider: order.agent?.fullName || 'Not assigned',
+        serviceType: order.serviceCategory?.name || 'Delivery',
+        lastUpdated: order.updatedAt,
+        customerName: order.customer?.fullName,
+        deliveryUpdates: order.deliveryUpdates || []
+      };
+    });
+
+    res.json({
+      success: true,
+      deliveries,
+      total: deliveries.length
+    });
+  } catch (err) {
+    console.error('Active deliveries error:', err);
+    next(err);
+  }
+};
+
+// Helper function to format delivery status
+const formatDeliveryStatus = (status) => {
+  const statusMap = {
+    'requested': 'Pending',
+    'accepted': 'In Transit',
+    'in-progress': 'In Transit',
+    'completed': 'Delivered',
+    'cancelled': 'Cancelled'
+  };
+  
+  return statusMap[status] || status;
+};
 // Helper function to format status for display
 const formatStatusForDisplay = (status) => {
   const statusMap = {
