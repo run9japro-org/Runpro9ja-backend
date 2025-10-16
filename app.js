@@ -49,7 +49,17 @@ app.use(
 // ✅ But the webhook route must come BEFORE express.json
 app.post("/api/payments/webhook", express.raw({ type: "application/json" }), handleWebhook);
 app.use(express.json({ limit: "1mb" }));
-app.use(cors({ origin: env.clientOrigin, credentials: true }));
+app.use(
+  cors({
+    origin: [
+      "http://localhost:3000",
+      "http://localhost:5173", // 👈 for your Vite app
+      "https://your-production-domain.com" // optional
+    ],
+    credentials: true,
+  })
+);
+
 app.use(morgan("dev"));
 
 // ✅ Health check
