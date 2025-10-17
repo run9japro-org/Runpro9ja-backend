@@ -57,8 +57,8 @@ app.use(
       "http://localhost:3000",
       "http://localhost:5173",
       "http://localhost:5174", // 👈 for your Vite app
-      "www.runpro9ja.com", // optional
-      "www.run9japro.com" // optional
+      "https://www.runpro9ja.com", // optional
+      "https://www.run9japro.com" // optional
     ],
     credentials: true,
   })
