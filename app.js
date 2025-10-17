@@ -57,8 +57,8 @@ app.use(
       "http://localhost:3000",
       "http://localhost:5173",
       "http://localhost:5174", // 👈 for your Vite app
-      "https://runpro9ja-admin-site.vercel.app/", // optional
-      "https://your-production-domain.com" // optional
+      "www.runpro9ja.com", // optional
+      "www.run9japro.com" // optional
     ],
     credentials: true,
   })
