@@ -9,6 +9,7 @@ import { sendEmail } from '../services/emailService.js';
 import { ROLES } from '../constants/roles.js';
 import { generateStrongPassword } from "../utils/passwordGenerator.js";
 import { notifyUser } from "../services/notificationService.js";
+import { ServiceCategory } from '../models/ServiceCategory.js';
 
 export const createAdmin = async (req, res, next) => {
   try {
