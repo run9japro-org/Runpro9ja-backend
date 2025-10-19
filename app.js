@@ -31,7 +31,7 @@ import { initSocket } from "./src/socket.js";
 const app = express();
 const server = http.createServer(app);
 
-import complaints from "./src/routes/complaints.js";
+import complaints from "./src/routes/complaintRoutes.js";
 // Init Socket.io
 initSocket(server);
 
