@@ -738,75 +738,102 @@ export const getServiceRequests = async (req, res, next) => {
 export const getDeliveryDetails = async (req, res, next) => {
   try {
     const requester = req.user;
-    const allowedRoles = [ROLES.SUPER_ADMIN, ROLES.ADMIN_HEAD, ROLES.ADMIN_AGENT_SERVICE];
+    const allowedRoles = [
+      ROLES.SUPER_ADMIN,
+      ROLES.ADMIN_HEAD,
+      ROLES.ADMIN_AGENT_SERVICE,
+    ];
+
+    // 🔐 Authorization check
     if (!allowedRoles.includes(requester.role)) {
-      return res.status(403).json({ message: 'Forbidden' });
+      return res.status(403).json({ message: "Forbidden" });
     }
 
     const { limit = 20 } = req.query;
 
-    // Get orders that involve delivery services or have location data
+    // 🧾 Fetch delivery-related orders
     const deliveryOrders = await Order.find({
       $or: [
-        { 'serviceCategory.name': { $regex: /delivery|errand|pickup|dispatch/i } },
-        { location: { $exists: true, $ne: '' } },
-        { deliveryUpdates: { $exists: true, $not: { $size: 0 } } }
-      ]
+        { "serviceCategory.name": { $regex: /delivery|errand|pickup|dispatch/i } },
+        { location: { $exists: true, $ne: "" } },
+        { deliveryUpdates: { $exists: true, $not: { $size: 0 } } },
+      ],
     })
-      .populate('customer', 'fullName email phone')
-      .populate('agent', 'fullName')
-      .populate('serviceCategory', 'name')
+      .populate("customer", "fullName email phone")
+      .populate("agent", "fullName email phone")
+      .populate("requestedAgent", "fullName email phone")
+      .populate("serviceCategory", "name")
       .sort({ createdAt: -1 })
       .limit(parseInt(limit));
 
-    const deliveryDetails = deliveryOrders.map(order => {
-      const serviceType = order.serviceCategory?.name || 'Delivery Service';
-      const latestStatus = order.timeline && order.timeline.length > 0 
-        ? order.timeline[order.timeline.length - 1].status 
-        : 'requested';
-      
+    // 🧩 Format orders into delivery details
+    const deliveryDetails = deliveryOrders.map((order) => {
+      const serviceType = order.serviceCategory?.name || "Delivery Service";
+
+      // Latest known status
+      let latestStatus =
+        order.timeline && order.timeline.length > 0
+          ? order.timeline[order.timeline.length - 1].status
+          : "requested";
+
+      // 🧠 Automatically mark as agent_selected if agent exists but timeline doesn’t say so
+      if (order.agent && latestStatus === "requested") {
+        latestStatus = "agent_selected";
+      }
+
+      // 🧍‍♂️ Rider (agent) logic
+      const riderInCharge =
+        order.agent?.fullName ||
+        order.requestedAgent?.fullName ||
+        "Not assigned";
+
       return {
         orderId: `RP-${order._id.toString().slice(-3)}`,
-        deliveryType: serviceType.length > 15 ? serviceType.substring(0, 15) + '...' : serviceType,
+        deliveryType:
+          serviceType.length > 15
+            ? serviceType.substring(0, 15) + "..."
+            : serviceType,
         pickupDestination: formatPickupDestination(order),
-        date: order.scheduledDate 
-          ? new Date(order.scheduledDate).toLocaleDateString('en-GB') 
-          : order.createdAt 
-          ? new Date(order.createdAt).toLocaleDateString('en-GB')
-          : 'N/A',
-        estimatedTime: order.estimatedDuration 
-          ? `${Math.ceil(order.estimatedDuration / 60)} Hours` 
-          : '2 Hours',
-        riderInCharge: order.agent?.fullName || 'Not assigned',
-        orderBy: order.customer?.fullName || 'Unknown Customer',
-        deliveredTo: order.customer?.fullName || 'Unknown Customer',
+        date: order.scheduledDate
+          ? new Date(order.scheduledDate).toLocaleDateString("en-GB")
+          : order.createdAt
+          ? new Date(order.createdAt).toLocaleDateString("en-GB")
+          : "N/A",
+        estimatedTime: order.estimatedDuration
+          ? `${Math.ceil(order.estimatedDuration / 60)} Hours`
+          : "2 Hours",
+        riderInCharge,
+        orderBy: order.customer?.fullName || "Unknown Customer",
+        deliveredTo: order.customer?.fullName || "Unknown Customer",
         status: latestStatus,
-        originalOrder: order
+        originalOrder: order,
       };
     });
 
-    // If no delivery orders found, return sample data
+    // 🧪 If no delivery orders found
     if (deliveryDetails.length === 0) {
       return res.json({
         success: true,
         deliveryDetails: getSampleDeliveryDetails(),
         total: 0,
-        message: 'No delivery orders found'
+        message: "No delivery orders found",
       });
     }
 
+    // ✅ Success
     res.json({
       success: true,
       deliveryDetails,
-      total: deliveryDetails.length
+      total: deliveryDetails.length,
     });
   } catch (err) {
-    console.error('Delivery details error:', err);
-    // Return sample data on error
+    console.error("Delivery details error:", err);
+
+    // 🧯 Return sample data on error
     res.json({
       success: true,
       deliveryDetails: getSampleDeliveryDetails(),
-      total: 0
+      total: 0,
     });
   }
 };
