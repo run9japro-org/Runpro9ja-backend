@@ -3,119 +3,135 @@ import { notifyUser } from '../services/notificationService.js';
 
 // Step 1: Customer creates order with selected agent
 // In your orderController.js - UPDATED createOrder function
+
 export const createOrder = async (req, res) => {
   try {
-    const { 
-      requestedAgent, 
-      orderType = 'normal', 
-      serviceCategory, 
-      details, 
-      location, 
-      serviceScale = 'minimum', // ADD THIS - default to minimum
-      ...orderData 
+    const {
+      requestedAgent,
+      orderType = 'normal',
+      serviceCategory,
+      details,
+      pickup,
+      destination,
+      serviceScale = 'minimum',
+      ...orderData
     } = req.body;
 
-    // Validate required fields for professional orders
-    if (orderType === 'professional') {
-      if (!serviceCategory) {
-        return res.status(400).json({ 
-          success: false, 
-          error: 'serviceCategory is required for professional orders' 
-        });
-      }
-      if (!details) {
-        return res.status(400).json({ 
-          success: false, 
-          error: 'details is required for professional orders' 
-        });
-      }
-      if (!location) {
-        return res.status(400).json({ 
-          success: false, 
-          error: 'location is required for professional orders' 
+    // Fetch user details from DB (to get addresses)
+    const user = req.user;
+
+    // 1️⃣ Determine pickup location
+    let pickupLocation = pickup;
+
+    if (!pickupLocation) {
+      const defaultAddress = user.addresses?.find(addr => addr.isDefault);
+
+      if (defaultAddress) {
+        pickupLocation = {
+          label: defaultAddress.label || 'Default Address',
+          addressLine: defaultAddress.addressLine,
+          city: defaultAddress.city,
+          state: defaultAddress.state,
+          country: defaultAddress.country,
+          lat: defaultAddress.lat,
+          lng: defaultAddress.lng,
+        };
+      } else {
+        return res.status(400).json({
+          success: false,
+          error: 'No pickup provided and no default address found. Please provide a pickup location.',
         });
       }
     }
 
-    // Determine initial status based on service scale
-    let initialStatus;
-    let timelineNote;
+    // 2️⃣ Validate required professional fields
+    if (orderType === 'professional') {
+      if (!serviceCategory) {
+        return res.status(400).json({
+          success: false,
+          error: 'serviceCategory is required for professional orders',
+        });
+      }
+      if (!details) {
+        return res.status(400).json({
+          success: false,
+          error: 'details is required for professional orders',
+        });
+      }
+      if (!destination) {
+        return res.status(400).json({
+          success: false,
+          error: 'destination is required for professional orders',
+        });
+      }
+    }
 
+    // 3️⃣ Determine initial status
+    let initialStatus, timelineNote;
     if (orderType === 'professional') {
       if (serviceScale === 'minimum') {
-        // For minimum scale: go directly to agent selection
         initialStatus = 'requested';
         timelineNote = 'Minimum scale service requested. Ready for agent selection.';
       } else {
-        // For large scale: representative inspection flow (your existing flow)
         initialStatus = 'requested';
         timelineNote = 'Large scale service requested. Representative will inspect before quotation.';
       }
     } else {
-      // Normal orders
       initialStatus = 'pending_agent_response';
       timelineNote = 'Waiting for agent response.';
     }
 
+    // 4️⃣ Create Order
     const order = new Order({
       ...orderData,
-      customer: req.user.id,
+      customer: user.id,
       requestedAgent: requestedAgent || null,
       orderType,
-      serviceScale, // ADD THIS FIELD
-      // Include professional order fields
-      serviceCategory: serviceCategory || orderData.serviceCategory,
-      details: details || orderData.details,
-      location: location || orderData.location,
+      serviceScale,
+      serviceCategory,
+      details,
+      pickup: pickupLocation, // 🚀 Automatically set from user’s default address
+      destination,
       status: initialStatus,
-      paymentStatus: 'pending'
+      paymentStatus: 'pending',
     });
 
     order.timeline.push({
       status: initialStatus,
-      note: timelineNote
+      note: timelineNote,
     });
 
     await order.save();
     await order.populate('serviceCategory', 'name description');
 
-    // Notify accordingly
+    // 5️⃣ Notify the user
     await notifyUser(
-      req.user.id,
+      user.id,
       'ORDER_CREATED',
       [order._id, order.serviceCategory],
       req.io
     );
 
-    // For professional orders, notify based on service scale
+    // 6️⃣ Notify available agents or representatives
     if (orderType === 'professional' && req.io) {
-      if (serviceScale === 'large_scale') {
-        // Notify representatives for large scale
-        req.io.emit('new_professional_order', {
-          type: 'PROFESSIONAL_ORDER_CREATED',
-          data: {
-            orderId: order._id,
-            serviceCategory: order.serviceCategory?.name || 'Professional Service',
-            customerName: req.user.fullName,
-            location: order.location,
-            serviceScale: 'large_scale'
-          }
-        });
-      } else {
-        // For minimum scale, notify available agents directly
-        req.io.emit('new_minimum_scale_order', {
-          type: 'MINIMUM_SCALE_ORDER_CREATED',
-          data: {
-            orderId: order._id,
-            serviceCategory: order.serviceCategory?.name || 'Professional Service',
-            customerName: req.user.fullName,
-            location: order.location,
-            serviceScale: 'minimum'
-          }
-        });
-      }
+      const eventData = {
+        orderId: order._id,
+        serviceCategory: order.serviceCategory?.name || 'Professional Service',
+        customerName: user.fullName,
+        pickup: order.pickup,
+        destination: order.destination,
+        serviceScale,
+      };
+
+      req.io.emit(
+        serviceScale === 'large_scale'
+          ? 'new_professional_order'
+          : 'new_minimum_scale_order',
+        { type: 'ORDER_CREATED', data: eventData }
+      );
     }
 
+    // ✅ 7️⃣ Response
     res.status(201).json({
       success: true,
       message:
@@ -124,13 +140,14 @@ export const createOrder = async (req, res) => {
             ? 'Minimum scale service requested. You can now select an agent.'
             : 'Large scale service requested. A representative will contact you for inspection and quotation.'
           : 'Order created successfully. Waiting for agent response.',
-      order
+      order,
     });
   } catch (err) {
     console.error('Error creating order:', err);
     res.status(500).json({ success: false, error: err.message });
   }
-}
+};
+
 
 export const submitQuotation = async (req, res) => {
   try {

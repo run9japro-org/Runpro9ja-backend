@@ -755,7 +755,8 @@ export const getDeliveryDetails = async (req, res, next) => {
     const deliveryOrders = await Order.find({
       $or: [
         { "serviceCategory.name": { $regex: /delivery|errand|pickup|dispatch/i } },
-        { location: { $exists: true, $ne: "" } },
+        { pickupLocation: { $exists: true, $ne: "" } },
+        { destinationLocation: { $exists: true, $ne: "" } },
         { deliveryUpdates: { $exists: true, $not: { $size: 0 } } },
       ],
     })
@@ -787,13 +788,18 @@ export const getDeliveryDetails = async (req, res, next) => {
         order.requestedAgent?.fullName ||
         "Not assigned";
 
+      // 🚚 Pickup and Destination
+      const pickup = order.pickupLocation || "Not specified";
+      const destination = order.destinationLocation || order.location || "Not specified";
+
       return {
         orderId: `RP-${order._id.toString().slice(-3)}`,
         deliveryType:
           serviceType.length > 15
             ? serviceType.substring(0, 15) + "..."
             : serviceType,
-        pickupDestination: formatPickupDestination(order),
+        pickup, // ✅ From location
+        destination, // ✅ To location
         date: order.scheduledDate
           ? new Date(order.scheduledDate).toLocaleDateString("en-GB")
           : order.createdAt

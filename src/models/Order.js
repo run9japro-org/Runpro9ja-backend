@@ -31,7 +31,10 @@ const orderSchema = new mongoose.Schema({
   serviceCategory: { type: mongoose.Schema.Types.ObjectId, ref: 'ServiceCategory', required: true },
   details: { type: String },
   price: { type: Number },
-  location: { type: String },
+  location: { type: String }, // optional old field, can be deprecated later
+  pickupLocation: { type: String },
+  destinationLocation: { type: String },
+
   
   // NEW: Service Scale Field
   serviceScale: {
