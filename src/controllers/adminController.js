@@ -1681,6 +1681,40 @@ export const deleteAccounts = async (req, res, next) => {
   }
 };
 
+export const deleteAccount = async (req, res, next) => {
+  try {
+    const requester = req.user;
+    if (![ROLES.SUPER_ADMIN, ROLES.ADMIN_HEAD].includes(requester.role)) {
+      return res.status(403).json({ message: 'Forbidden' });
+    }
+
+    const { id } = req.params;
+
+    // Prevent deletion of super admin accounts
+    const account = await User.findById(id);
+    if (!account) {
+      return res.status(404).json({ message: 'Account not found' });
+    }
+
+    if (account.role === ROLES.SUPER_ADMIN && requester.role !== ROLES.SUPER_ADMIN) {
+      return res.status(403).json({ 
+        message: 'Cannot delete super admin accounts' 
+      });
+    }
+
+    // Delete account
+    await User.findByIdAndDelete(id);
+
+    res.json({
+      success: true,
+      message: 'Successfully deleted account'
+    });
+  } catch (err) {
+    console.error('Delete account error:', err);
+    next(err);
+  }
+};
+
 // PUT /api/admins/accounts/:id
 export const updateAccount = async (req, res, next) => {
   try {
