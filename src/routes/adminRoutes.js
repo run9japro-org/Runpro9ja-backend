@@ -94,7 +94,7 @@ router.get('/payments-outflow', authGuard, getPaymentsOutflow);
 router.get('/accounts', authGuard, getAccounts);
 router.put('/accounts/:id', authGuard, updateAccount);
 router.delete('/accounts', authGuard, deleteAccounts);
-router.delete('/admin/accounts/:id',authGuard, deleteAccount);
+router.delete('/accounts/:id',authGuard, deleteAccount);
 // Complaint management (Super Admin, Admin Head, Admin Customer Service)
 router.get('/complaints', authGuard, getComplaints);
 
