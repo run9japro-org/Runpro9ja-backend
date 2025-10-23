@@ -6,7 +6,7 @@ import { AgentProfile } from '../models/AgentProfile.js'; // Updated import
 import  Order  from '../models/Order.js';
 import { Payment } from '../models/Payment.js';
 import { sendEmail } from '../services/emailService.js';
-import { ROLES } from '../constants/roles.js';
+import {ADMIN_ROLES, ROLES } from '../constants/roles.js';
 import { generateStrongPassword } from "../utils/passwordGenerator.js";
 import { notifyUser } from "../services/notificationService.js";
 import { ServiceCategory } from '../models/ServiceCategory.js';
@@ -1640,8 +1640,6 @@ export const getAccounts = async (req, res) => {
 
 
 // DELETE /api/admins/accounts
-import { ADMIN_ROLES, ROLES } from "../constants/roles.js";
-import { User } from "../models/User.js";
 
 export const deleteAccounts = async (req, res, next) => {
   try {
