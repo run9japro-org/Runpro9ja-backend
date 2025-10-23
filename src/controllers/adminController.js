@@ -1640,43 +1640,48 @@ export const getAccounts = async (req, res) => {
 
 
 // DELETE /api/admins/accounts
+import { ADMIN_ROLES, ROLES } from "../constants/roles.js";
+import { User } from "../models/User.js";
+
 export const deleteAccounts = async (req, res, next) => {
   try {
     const requester = req.user;
-    if (![ROLES.SUPER_ADMIN, ROLES.ADMIN_HEAD].includes(requester.role)) {
-      return res.status(403).json({ message: 'Forbidden' });
+
+    // ✅ Allow any valid admin role
+    if (!ADMIN_ROLES.has(requester.role)) {
+      return res.status(403).json({ message: "Forbidden" });
     }
 
     const { accountIds } = req.body;
 
     if (!accountIds || !Array.isArray(accountIds) || accountIds.length === 0) {
-      return res.status(400).json({ message: 'No account IDs provided' });
+      return res.status(400).json({ message: "No account IDs provided" });
     }
 
-    // Prevent deletion of super admin accounts
+    // Prevent deletion of super admin accounts unless requester is a super admin
     const superAdminAccounts = await User.find({
       _id: { $in: accountIds },
-      role: ROLES.SUPER_ADMIN
+      role: ROLES.SUPER_ADMIN,
     });
 
     if (superAdminAccounts.length > 0 && requester.role !== ROLES.SUPER_ADMIN) {
-      return res.status(403).json({ 
-        message: 'Cannot delete super admin accounts' 
+      return res.status(403).json({
+        message: "Cannot delete super admin accounts",
       });
     }
 
     // Delete accounts
     const result = await User.deleteMany({
-      _id: { $in: accountIds }
+      _id: { $in: accountIds },
     });
 
     res.json({
       success: true,
       message: `Successfully deleted ${result.deletedCount} accounts`,
-      deletedCount: result.deletedCount
+      deletedCount: result.deletedCount,
     });
   } catch (err) {
-    console.error('Delete accounts error:', err);
+    console.error("Delete accounts error:", err);
     next(err);
   }
 };
@@ -1684,33 +1689,34 @@ export const deleteAccounts = async (req, res, next) => {
 export const deleteAccount = async (req, res, next) => {
   try {
     const requester = req.user;
-    if (![ROLES.SUPER_ADMIN, ROLES.ADMIN_HEAD].includes(requester.role)) {
-      return res.status(403).json({ message: 'Forbidden' });
+
+    // ✅ Allow any valid admin role
+    if (!ADMIN_ROLES.has(requester.role)) {
+      return res.status(403).json({ message: "Forbidden" });
     }
 
     const { id } = req.params;
 
-    // Prevent deletion of super admin accounts
+    // Prevent deletion of super admin accounts unless requester is super admin
     const account = await User.findById(id);
     if (!account) {
-      return res.status(404).json({ message: 'Account not found' });
+      return res.status(404).json({ message: "Account not found" });
     }
 
     if (account.role === ROLES.SUPER_ADMIN && requester.role !== ROLES.SUPER_ADMIN) {
-      return res.status(403).json({ 
-        message: 'Cannot delete super admin accounts' 
+      return res.status(403).json({
+        message: "Cannot delete super admin accounts",
       });
     }
 
-    // Delete account
     await User.findByIdAndDelete(id);
 
     res.json({
       success: true,
-      message: 'Successfully deleted account'
+      message: "Successfully deleted account",
     });
   } catch (err) {
-    console.error('Delete account error:', err);
+    console.error("Delete account error:", err);
     next(err);
   }
 };
