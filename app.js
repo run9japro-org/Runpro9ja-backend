@@ -22,6 +22,7 @@ import withdrawalRoutes from "./src/routes/withdrawalRoutes.js";
 import chatRoutes from "./src/routes/chatRoutes.js";
 import notificationRoutes from "./src/routes/notificationRoutes.js";
 import adminRoutes from "./src/routes/adminRoutes.js";
+import searchRoutes from './src/routes/searchRoutes.js';
 // In your main server file, add call routes:
 // import callRoutes from "./src/routes/callRoutes.js";
 import customerRoutes from './src/routes/customerRoutes.js';
@@ -91,7 +92,7 @@ app.use("/api/notifications", notificationRoutes);
 app.use("/api/admin", adminRoutes);
 app.use("/api/withdrawals", withdrawalRoutes);
 app.use('/api/complaints', complaints);
-
+app.use('/api', searchRoutes);
 // Add to your routes section:
 // app.use("/api/calls", callRoutes);
 // ✅ Error handlers
