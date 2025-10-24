@@ -14,18 +14,34 @@ io.on('connection', (socket) => {
 console.log('Socket connected:', socket.id);
 
 
- // Support agent joins their personal room
-  socket.on('joinSupportRoom', (agentId) => {
-    socket.join(`support_agent_${agentId}`);
-    console.log(`Support agent ${agentId} joined their room`);
-  });
-
   // User joins their support room
-  socket.on('joinSupportRoom', (userId) => {
-    socket.join(`user_support_${userId}`);
+  socket.on('join_support', (userId) => {
+    socket.join(`support_user_${userId}`);
     console.log(`User ${userId} joined support room`);
   });
 
+  // Support agent joins support room
+  socket.on('join_support_agent', (agentId) => {
+    socket.join(`support_agent_${agentId}`);
+    console.log(`Support agent ${agentId} joined support room`);
+  });
+
+  // Support agent joins all support room for broadcasts
+  socket.on('join_support_broadcast', () => {
+    socket.join('support_broadcast');
+    console.log(`Socket ${socket.id} joined support broadcast`);
+  });
+
+  // Handle support messages
+  socket.on('support_message', (data) => {
+    const { to, message, from } = data;
+    // Broadcast to specific user or agent
+    socket.to(`support_user_${to}`).emit('new_support_message', {
+      from,
+      message,
+      timestamp: new Date()
+    });
+  });
 // Customer joins order room to receive location updates
 socket.on('subscribeOrder', (orderId) => {
 socket.join(`order_${orderId}`);
