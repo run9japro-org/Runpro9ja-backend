@@ -32,7 +32,6 @@ import {
   deleteAccounts,
   deleteAccount,
   updateAccount,
-  // Add the new dashboard functions
   getDashboardOverview,
   getDashboardAnalytics,
   getQuickStats
@@ -42,62 +41,57 @@ import {  updateAgentLocation } from '../controllers/agentController.js';
 const router = express.Router();
 
 // ==================== DASHBOARD ROUTES ====================
-// Dashboard overview (Super Admin, Admin Head, Admin Agent Service, Admin Customer Service)
 router.get('/dashboard/overview', authGuard, getDashboardOverview);
-
-// Dashboard analytics (Super Admin, Admin Head, Admin Agent Service)
 router.get('/dashboard/analytics', authGuard, getDashboardAnalytics);
-
-// Quick stats (Super Admin, Admin Head, Admin Agent Service, Admin Customer Service)
 router.get('/dashboard/quick-stats', authGuard, getQuickStats);
 
-// Admin management (Super Admin & Admin Head only)
-router.post('/', authGuard, createAdmin);
-router.get('/', authGuard, listAdmins);
-router.delete('/:id', authGuard, deleteAdmin);
-router.put('/:id/reset-password', authGuard, resetAdminPassword);
+// ==================== SPECIFIC ROUTES FIRST ====================
+// Self-management
+router.put('/me/change-password', authGuard, changeMyPassword);
 
-// Account management (Super Admin & Admin Head only)
+// Account management - MUST come before '/:id' routes
+router.get('/accounts', authGuard, getAccounts);
+router.delete('/accounts', authGuard, deleteAccounts);  // ✅ Move this UP
+router.put('/accounts/:id', authGuard, updateAccount);
+router.delete('/accounts/:id', authGuard, deleteAccount);
 
-// Analytics (Super Admin, Admin Head, Admin Agent Service)
+// Analytics
 router.get('/analytics/summary', authGuard, getCompanyAnalytics);
 
-// Agent management (Super Admin, Admin Head, Admin Agent Service)
+// Agent management
 router.get('/agents', authGuard, getAllAgents);
-router.get('/top-agents', authGuard, getTopAgents );
+router.get('/top-agents', authGuard, getTopAgents);
 router.put('/agents/:id/verify', authGuard, verifyAgent);
 
-// Service requests (All admins except specific restrictions)
+// Service requests
 router.get('/service-requests', authGuard, getAllServiceRequests);
 router.patch('/update-location', authGuard, updateAgentLocation);
 
-// Employee management (Super Admin & Admin Head only)
+// Employee management
 router.get('/employees', authGuard, getAllEmployees);
 router.get('/delivery-details', authGuard, getDeliveryDetails);
 router.get('/active-deliveries', authGuard, getActiveDeliveries);
-router.get('/service-requests', authGuard, getServiceRequests);
 router.get('/potential-providers', authGuard, getPotentialProviders);
 router.get('/service-providers', authGuard, getServiceProviders);
 router.get('/support-employees', authGuard, getSupportEmployees);
 router.get('/pending-requests', authGuard, getPendingRequests);
 router.get('/support-messages', authGuard, getSupportMessages);
 
-// Payment management (Super Admin & Admin Head only)
+// Payment management
 router.get('/payments', authGuard, getPaymentDetails);
 router.get('/recent-payments', authGuard, getRecentPayments);
 router.get('/payments-summary', authGuard, getPaymentsSummary);
 router.get('/payments-inflow', authGuard, getPaymentsInflow);
 router.get('/payments-outflow', authGuard, getPaymentsOutflow);
 
-// Account management
-router.get('/accounts', authGuard, getAccounts);
-router.put('/accounts/:id', authGuard, updateAccount);
-router.delete('/accounts', authGuard, deleteAccounts);
-router.delete('/accounts/:id', authGuard, deleteAccount);
-// Complaint management (Super Admin, Admin Head, Admin Customer Service)
+// Complaint management
 router.get('/complaints', authGuard, getComplaints);
 
-// Self-management
-router.put('/me/change-password', authGuard, changeMyPassword);
+// ==================== DYNAMIC ROUTES LAST ====================
+// Admin management - MUST come AFTER all specific routes
+router.post('/', authGuard, createAdmin);
+router.get('/', authGuard, listAdmins);
+router.delete('/:id', authGuard, deleteAdmin);  // ✅ This MUST be last!
+router.put('/:id/reset-password', authGuard, resetAdminPassword);
 
 export default router;
