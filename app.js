@@ -26,7 +26,8 @@ import searchRoutes from './src/routes/searchRoutes.js';
 // In your main server file, add call routes:
 // import callRoutes from "./src/routes/callRoutes.js";
 import customerRoutes from './src/routes/customerRoutes.js';
-import supportRoutes from './src/routes/supportRoutes.js'
+import supportRoutes from './src/routes/supportRoutes.js';
+import adminSupportRoutes from './src/routes/adminSupportRoutes.js';
 // ✅ Socket.io
 import { initSocket } from "./src/socket.js";
 
@@ -95,6 +96,7 @@ app.use("/api/withdrawals", withdrawalRoutes);
 app.use('/api/complaints', complaints);
 app.use('/api', searchRoutes);
 app.use('/api/support',supportRoutes);
+app.use('/api/admin/support', adminSupportRoutes);
 // Add to your routes section:
 // app.use("/api/calls", callRoutes);
 // ✅ Error handlers
