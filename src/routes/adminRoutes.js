@@ -58,7 +58,6 @@ router.delete('/:id', authGuard, deleteAdmin);
 router.put('/:id/reset-password', authGuard, resetAdminPassword);
 
 // Account management (Super Admin & Admin Head only)
-router.delete('/accounts/:id', authGuard, deleteUserAccount);
 
 // Analytics (Super Admin, Admin Head, Admin Agent Service)
 router.get('/analytics/summary', authGuard, getCompanyAnalytics);
