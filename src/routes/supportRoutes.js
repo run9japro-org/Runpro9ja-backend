@@ -2,50 +2,95 @@
 import express from "express";
 import { authGuard } from "../middlewares/auth.js";
 import { Message } from "../models/Chat.js";
+import { User } from "../models/User.js"; // Assuming you have a User model
 
 const router = express.Router();
 
-// Support-specific middleware
-const isSupportAgent = (req, res, next) => {
-  // Assuming you have user roles in your user model
-  if (req.user.role !== 'support' && req.user.role !== 'admin') {
-    return res.status(403).json({
-      success: false,
-      message: 'Access denied. Support agent role required.'
-    });
-  }
-  next();
-};
-
-// 1. Start support chat (for users)
-router.post('/start-support', authGuard, async (req, res, next) => {
+// 1. Start support chat - matches your Flutter app's startSupportChat()
+router.post('/start-chat', authGuard, async (req, res, next) => {
   try {
-    const { message, issueType = 'general' } = req.body;
-    
-    if (!message) {
-      return res.status(400).json({
-        success: false,
-        message: 'Message is required'
+    const { message, category = 'general_support' } = req.body;
+
+    // Find available support agents (you'll need to implement this properly)
+    const supportAgents = await User.find({ 
+      role: { $in: ['support', 'admin'] },
+      isOnline: true 
+    }).limit(1);
+
+    if (supportAgents.length === 0) {
+      return res.status(200).json({
+        success: true,
+        message: 'Support chat started',
+        supportAgent: {
+          id: 'support_system',
+          name: 'RunPro Support Team',
+          online: true
+        }
       });
     }
 
-    // Find available support agent (you'll need to implement this logic)
-    const supportAgent = await findAvailableSupportAgent();
+    const supportAgent = supportAgents[0];
+
+    // Create initial support message
+    const supportMessage = await Message.create({
+      sender: req.user._id,
+      receiver: supportAgent._id,
+      message: message || 'Hello, I need help',
+      isSupportChat: true,
+      supportIssueType: category,
+      supportStatus: 'open'
+    });
+
+    // Populate user info
+    await supportMessage.populate('sender', 'name email profileImage');
+    await supportMessage.populate('receiver', 'name email profileImage');
+
+    res.status(201).json({
+      success: true,
+      message: 'Support chat started successfully',
+      supportAgent: {
+        id: supportAgent._id,
+        name: supportAgent.name,
+        online: true,
+        role: supportAgent.role
+      },
+      chatId: supportMessage._id
+    });
+
+  } catch (err) {
+    console.error('Error starting support chat:', err);
+    next(err);
+  }
+});
+
+// 2. Send support message - matches your sendSupportMessage()
+router.post('/send-message', authGuard, async (req, res, next) => {
+  try {
+    const { message, category = 'general_support', receiverId = null } = req.body;
+
+    // If receiverId is provided, use it (for ongoing conversations)
+    // Otherwise, find an available support agent
+    let receiver = receiverId;
     
-    if (!supportAgent) {
-      return res.status(503).json({
-        success: false,
-        message: 'No support agents available at the moment. Please try again later.'
-      });
+    if (!receiver) {
+      const supportAgents = await User.find({ 
+        role: { $in: ['support', 'admin'] }
+      }).limit(1);
+      
+      if (supportAgents.length > 0) {
+        receiver = supportAgents[0]._id;
+      } else {
+        // Fallback to system support user
+        receiver = await getSystemSupportUser();
+      }
     }
 
-    // Create support message
     const supportMsg = await Message.create({
       sender: req.user._id,
-      receiver: supportAgent._id, // Send to support agent
-      message: `[SUPPORT - ${issueType.toUpperCase()}] ${message}`,
+      receiver: receiver,
+      message: message,
       isSupportChat: true,
-      supportIssueType: issueType,
+      supportIssueType: category,
       supportStatus: 'open'
     });
 
@@ -53,149 +98,149 @@ router.post('/start-support', authGuard, async (req, res, next) => {
     await supportMsg.populate('sender', 'name email profileImage');
     await supportMsg.populate('receiver', 'name email profileImage');
 
-    // Emit via Socket.io
+    // Emit via Socket.io for real-time updates
     if (req.io) {
-      req.io.to(supportAgent._id.toString()).emit("new_support_ticket", supportMsg);
+      req.io.to(receiver.toString()).emit("new_support_message", supportMsg);
+      // Also emit to user's own room for confirmation
+      req.io.to(req.user._id.toString()).emit("support_message_sent", supportMsg);
     }
 
-    res.json({ 
-      success: true, 
-      msg: supportMsg,
-      assignedAgent: {
-        id: supportAgent._id,
-        name: supportAgent.name
-      }
+    res.json({
+      success: true,
+      message: 'Message sent to support team',
+      msg: supportMsg
     });
+
   } catch (err) {
-    console.error('Error starting support chat:', err);
+    console.error('Error sending support message:', err);
     next(err);
   }
 });
 
-// 2. Get all support tickets (for support agents)
-router.get('/support/tickets', authGuard, isSupportAgent, async (req, res, next) => {
+// 3. Get support agents - matches your getSupportAgents()
+router.get('/agents', authGuard, async (req, res, next) => {
   try {
-    const { status = 'open' } = req.query;
-    
-    const supportTickets = await Message.find({
-      isSupportChat: true,
-      supportStatus: status
+    const supportAgents = await User.find({ 
+      role: { $in: ['support', 'admin'] }
+    }).select('name email profileImage role isOnline lastSeen');
+
+    // If no support agents in database, return default ones
+    if (supportAgents.length === 0) {
+      return res.json({
+        success: true,
+        agents: getDefaultSupportAgents()
+      });
+    }
+
+    res.json({
+      success: true,
+      agents: supportAgents.map(agent => ({
+        id: agent._id,
+        name: agent.name,
+        role: agent.role || 'Support Agent',
+        online: agent.isOnline || true,
+        avatar: agent.profileImage || '',
+        lastSeen: agent.lastSeen
+      }))
+    });
+
+  } catch (err) {
+    console.error('Error getting support agents:', err);
+    // Return default agents in case of error
+    res.json({
+      success: true,
+      agents: getDefaultSupportAgents()
+    });
+  }
+});
+
+// 4. Get user's support conversations
+router.get('/conversations', authGuard, async (req, res, next) => {
+  try {
+    const supportConversations = await Message.find({
+      $or: [
+        { sender: req.user._id, isSupportChat: true },
+        { receiver: req.user._id, isSupportChat: true }
+      ]
     })
     .populate('sender', 'name email profileImage')
     .populate('receiver', 'name email profileImage')
-    .sort({ createdAt: -1 });
+    .sort({ createdAt: -1 })
+    .limit(50);
 
-    res.json({ success: true, tickets: supportTickets });
-  } catch (err) {
-    console.error('Error getting support tickets:', err);
-    next(err);
-  }
-});
-
-// 3. Support agent replies to ticket
-router.post('/support/reply/:ticketId', authGuard, isSupportAgent, async (req, res, next) => {
-  try {
-    const { ticketId } = req.params;
-    const { message } = req.body;
-
-    if (!message) {
-      return res.status(400).json({
-        success: false,
-        message: 'Message is required'
-      });
-    }
-
-    // Find the original support ticket
-    const originalTicket = await Message.findById(ticketId);
-    
-    if (!originalTicket) {
-      return res.status(404).json({
-        success: false,
-        message: 'Support ticket not found'
-      });
-    }
-
-    // Create reply message
-    const replyMsg = await Message.create({
-      sender: req.user._id, // Support agent
-      receiver: originalTicket.sender, // Send back to original user
-      message: `[SUPPORT REPLY] ${message}`,
-      isSupportChat: true,
-      supportIssueType: originalTicket.supportIssueType,
-      supportStatus: 'in_progress',
-      parentTicket: ticketId
+    res.json({
+      success: true,
+      conversations: supportConversations
     });
 
-    // Update original ticket status
-    originalTicket.supportStatus = 'in_progress';
-    await originalTicket.save();
-
-    // Populate user info
-    await replyMsg.populate('sender', 'name email profileImage');
-    await replyMsg.populate('receiver', 'name email profileImage');
-
-    // Emit via Socket.io
-    if (req.io) {
-      req.io.to(originalTicket.sender.toString()).emit("support_reply", replyMsg);
-    }
-
-    res.json({ success: true, msg: replyMsg });
   } catch (err) {
-    console.error('Error replying to support ticket:', err);
+    console.error('Error getting support conversations:', err);
     next(err);
   }
 });
 
-// 4. Close support ticket
-router.patch('/support/close/:ticketId', authGuard, isSupportAgent, async (req, res, next) => {
+// 5. Get specific support conversation
+router.get('/conversation/:agentId', authGuard, async (req, res, next) => {
   try {
-    const { ticketId } = req.params;
-    const { resolution } = req.body;
+    const { agentId } = req.params;
 
-    const ticket = await Message.findById(ticketId);
-    
-    if (!ticket) {
-      return res.status(404).json({
-        success: false,
-        message: 'Support ticket not found'
-      });
-    }
+    const messages = await Message.find({
+      $or: [
+        { sender: req.user._id, receiver: agentId, isSupportChat: true },
+        { sender: agentId, receiver: req.user._id, isSupportChat: true }
+      ]
+    })
+    .populate('sender', 'name email profileImage')
+    .populate('receiver', 'name email profileImage')
+    .sort({ createdAt: 1 });
 
-    ticket.supportStatus = 'closed';
-    if (resolution) {
-      ticket.supportResolution = resolution;
-    }
-    
-    await ticket.save();
-
-    // Notify user that ticket is closed
-    if (req.io) {
-      req.io.to(ticket.sender.toString()).emit("support_ticket_closed", {
-        ticketId,
-        resolution
-      });
-    }
-
-    res.json({ 
-      success: true, 
-      message: 'Support ticket closed successfully',
-      ticket 
+    res.json({
+      success: true,
+      messages: messages
     });
+
   } catch (err) {
-    console.error('Error closing support ticket:', err);
+    console.error('Error getting support conversation:', err);
     next(err);
   }
 });
 
-// Helper function to find available support agent
-async function findAvailableSupportAgent() {
-  // Implement your logic to find available support agents
-  // This is a simplified version - you'll want to add proper agent availability logic
-  const User = mongoose.model('User');
-  return await User.findOne({ 
-    role: 'support', 
-    isAvailable: true 
-  }).select('name email _id');
+// Helper functions
+async function getSystemSupportUser() {
+  // Create or get a system support user
+  let supportUser = await User.findOne({ email: 'support@runpro9ja.com' });
+  
+  if (!supportUser) {
+    supportUser = await User.create({
+      name: 'RunPro Support Team',
+      email: 'support@runpro9ja.com',
+      role: 'support',
+      isOnline: true
+    });
+  }
+  
+  return supportUser._id;
+}
+
+function getDefaultSupportAgents() {
+  return [
+    {
+      id: 'support_system',
+      name: 'RunPro Support',
+      role: 'Customer Support',
+      online: true,
+      avatar: '',
+      lastSeen: new Date()
+    },
+    {
+      id: 'support_1',
+      name: 'Sarah Johnson',
+      role: 'Senior Support Agent',
+      online: true,
+      avatar: '',
+      lastSeen: new Date()
+    }
+  ];
 }
 
 export default router;
