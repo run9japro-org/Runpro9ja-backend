@@ -28,7 +28,17 @@ export const register = async (req, res, next) => {
       });
     }
 
-    const user = await User.create({ role, fullName, email, password, location, dob });
+    // Parse the date properly
+    const userData = {
+      role,
+      fullName,
+      email,
+      password,
+      location,
+      dob: new Date(dob) // Convert string to Date object
+    };
+
+    const user = await User.create(userData);
 
     try {
       const otpResult = await setOtpForUser(user);
