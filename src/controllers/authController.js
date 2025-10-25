@@ -76,25 +76,24 @@ export const login = async (req, res, next) => {
       return res.status(404).json({ success: false, message: 'User not found' });
 
     // ✅ handle admin password rotation (every 24 hours)
-    if (user.role?.includes('ADMIN')) {
-      const now = new Date();
-      const lastRotated = user.passwordLastRotated || user.createdAt;
-      const hoursSinceRotation = (now - new Date(lastRotated)) / (1000 * 60 * 60);
+   // In your authController.js - login function
+if (user.role?.includes('admin')) { // ← Change to lowercase
+  const now = new Date();
+  const lastRotated = user.passwordLastRotated || user.createdAt;
+  const hoursSinceRotation = (now - new Date(lastRotated)) / (1000 * 60 * 60);
 
-      if (hoursSinceRotation >= 24) {
-        const newPass = generateStrongPassword(16);
-        user.password = await bcrypt.hash(newPass, SALT_ROUNDS);
-        user.passwordLastRotated = now;
-        await user.save();
+  if (hoursSinceRotation >= 24) {
+    const newPass = generateStrongPassword(16);
+    user.password = await bcrypt.hash(newPass, SALT_ROUNDS);
+    user.passwordLastRotated = now;
+    await user.save();
 
-        // In production: Notify super_admin/head_admin securely (email/SMS)
-        return res.status(403).json({
-          success: false,
-          message:
-            'Password rotated automatically. Contact your super admin for your new password.'
-        });
-      }
-    }
+    return res.status(403).json({
+      success: false,
+      message: 'Password rotated automatically. Contact your super admin for your new password.'
+    });
+  }
+}
 
     // ✅ validate password
     const isPasswordValid = await bcrypt.compare(password, user.password);
