@@ -408,6 +408,9 @@ export const getMyServiceHistory = async (req, res) => {
 };
 
 
+
+
+// FORGOT PASSWORD - Enhanced version
 export const forgotPassword = async (req, res, next) => {
   try {
     const { email } = req.body;
@@ -421,10 +424,20 @@ export const forgotPassword = async (req, res, next) => {
 
     console.log('🔐 Forgot password request for:', email);
 
+    // Validate email format
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(email)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Please provide a valid email address'
+      });
+    }
+
     const user = await User.findOne({ email });
+    
+    // For security, always return success even if email doesn't exist
     if (!user) {
-      // Don't reveal if user exists or not for security
-      console.log('📧 Email not found (for security), but sending success response');
+      console.log('📧 Email not found (security measure)');
       return res.json({
         success: true,
         message: 'If an account with that email exists, a reset link has been sent'
@@ -439,29 +452,34 @@ export const forgotPassword = async (req, res, next) => {
       });
     }
 
-    // Generate reset token
+    // Generate secure reset token
     const resetToken = crypto.randomBytes(32).toString('hex');
     const resetTokenExpiry = Date.now() + 3600000; // 1 hour
 
+    // Save reset token to user document
     user.resetPasswordToken = resetToken;
     user.resetPasswordExpires = resetTokenExpiry;
     await user.save();
 
-    // Send email with reset link using your existing service
-    const resetUrl = `${env.client.url}/reset-password?token=${resetToken}`;
+    // Construct reset URL - Use environment variable or fallback
+    const clientUrl = process.env.CLIENT_URL || 'http://localhost:3000';
+    const resetUrl = `${clientUrl}/reset-password?token=${resetToken}`;
     
+    console.log('📧 Sending password reset email to:', user.email);
+
+    // Send email with reset link
     const emailResult = await sendPasswordResetEmail({
       to: user.email,
-      name: user.fullName,
+      name: user.fullName || 'User',
       resetUrl: resetUrl
     });
 
     if (!emailResult.success) {
-      console.error('❌ Failed to send password reset email');
-      // Still return success to user, but log the error
+      console.error('❌ Failed to send password reset email:', emailResult.error);
+      // Still return success to user for security
+    } else {
+      console.log('✅ Password reset email sent successfully to:', user.email);
     }
-
-    console.log('✅ Password reset email sent successfully to:', user.email);
 
     res.json({
       success: true,
@@ -474,7 +492,7 @@ export const forgotPassword = async (req, res, next) => {
   }
 };
 
-// RESET PASSWORD
+// RESET PASSWORD - Enhanced version
 export const resetPassword = async (req, res, next) => {
   try {
     const { token, newPassword } = req.body;
@@ -486,6 +504,7 @@ export const resetPassword = async (req, res, next) => {
       });
     }
 
+    // Validate password strength
     if (newPassword.length < 6) {
       return res.status(400).json({
         success: false,
@@ -495,7 +514,7 @@ export const resetPassword = async (req, res, next) => {
 
     console.log('🔄 Processing password reset for token:', token.substring(0, 10) + '...');
 
-    // Find user by reset token and check expiry
+    // Find user by valid reset token
     const user = await User.findOne({
       resetPasswordToken: token,
       resetPasswordExpires: { $gt: Date.now() }
@@ -505,17 +524,39 @@ export const resetPassword = async (req, res, next) => {
       console.log('❌ Invalid or expired reset token');
       return res.status(400).json({
         success: false,
-        message: 'Invalid or expired reset token'
+        message: 'Invalid or expired reset token. Please request a new reset link.'
       });
     }
 
-    // Set new password and clear reset token
+    // Check if new password is different from current one
+    const isSamePassword = await bcrypt.compare(newPassword, user.password);
+    if (isSamePassword) {
+      return res.status(400).json({
+        success: false,
+        message: 'New password must be different from current password'
+      });
+    }
+
+    // Update password and clear reset token
     user.password = newPassword;
     user.resetPasswordToken = undefined;
     user.resetPasswordExpires = undefined;
+    user.passwordLastRotated = new Date(); // Update rotation timestamp
+    
     await user.save();
 
     console.log('✅ Password reset successfully for user:', user.email);
+
+    // Optional: Send confirmation email
+    try {
+      await sendPasswordResetEmail({
+        to: user.email,
+        name: user.fullName || 'User',
+        isConfirmation: true
+      });
+    } catch (emailError) {
+      console.log('⚠️ Password reset confirmation email failed, but password was reset');
+    }
 
     res.json({
       success: true,
@@ -527,6 +568,8 @@ export const resetPassword = async (req, res, next) => {
     next(error);
   }
 };
+
+
 
 // Update your existing OTP function to use the new email service
 const setOtpForUser = async (user) => {
