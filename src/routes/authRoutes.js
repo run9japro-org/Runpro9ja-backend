@@ -1,4 +1,6 @@
 import { Router } from 'express';
+import { fileURLToPath } from 'url';
+import path from 'path';
 import { 
   login, 
   me, 
@@ -11,6 +13,15 @@ import {
 import { authGuard } from '../middlewares/auth.js';
 
 const router = Router();
+
+// Get directory name for ES modules
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
+// Serve reset password page
+router.get('/reset-password', (req, res) => {
+  res.sendFile(path.join(__dirname, '../public/reset-password.html'));
+});
 
 // Basic Authentication Routes
 router.post('/register', register);

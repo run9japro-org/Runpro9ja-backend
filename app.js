@@ -68,7 +68,7 @@ app.use(
 );
 
 app.use(morgan("dev"));
-
+app.use(express.static('public'));
 // ✅ Health check
 app.get("/", (req, res) =>
   res.json({ status: "ok", message: "Marketplace API v1" })

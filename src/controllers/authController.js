@@ -415,83 +415,37 @@ export const forgotPassword = async (req, res, next) => {
   try {
     const { email } = req.body;
 
-    if (!email) {
-      return res.status(400).json({
-        success: false,
-        message: 'Email is required'
-      });
-    }
-
-    console.log('🔐 Forgot password request for:', email);
-
-    // Validate email format
-    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-    if (!emailRegex.test(email)) {
-      return res.status(400).json({
-        success: false,
-        message: 'Please provide a valid email address'
-      });
-    }
-
     const user = await User.findOne({ email });
-    
-    // For security, always return success even if email doesn't exist
     if (!user) {
-      console.log('📧 Email not found (security measure)');
       return res.json({
         success: true,
-        message: 'If an account with that email exists, a reset link has been sent'
+        message: 'If an account exists, a reset link has been sent'
       });
     }
 
-    // Check if user uses Google auth only (no password)
-    if (user.googleId && !user.password) {
-      return res.status(400).json({
-        success: false,
-        message: 'This account uses Google authentication. Please sign in with Google.'
-      });
-    }
-
-    // Generate secure reset token
     const resetToken = crypto.randomBytes(32).toString('hex');
-    const resetTokenExpiry = Date.now() + 3600000; // 1 hour
-
-    // Save reset token to user document
     user.resetPasswordToken = resetToken;
-    user.resetPasswordExpires = resetTokenExpiry;
+    user.resetPasswordExpires = Date.now() + 3600000;
     await user.save();
 
-    // Construct reset URL - Use environment variable or fallback
-    const clientUrl = process.env.CLIENT_URL || 'http://localhost:3000';
-    const resetUrl = `${clientUrl}/reset-password?token=${resetToken}`;
+    // IMPORTANT: This URL should match your route
+    const baseUrl = process.env.BASE_URL || `${req.protocol}://${req.get('host')}`;
+    const resetUrl = `${baseUrl}/api/auth/reset-password?token=${resetToken}`;
     
-    console.log('📧 Sending password reset email to:', user.email);
-
-    // Send email with reset link
-    const emailResult = await sendPasswordResetEmail({
+    await sendPasswordResetEmail({
       to: user.email,
-      name: user.fullName || 'User',
+      name: user.fullName,
       resetUrl: resetUrl
     });
 
-    if (!emailResult.success) {
-      console.error('❌ Failed to send password reset email:', emailResult.error);
-      // Still return success to user for security
-    } else {
-      console.log('✅ Password reset email sent successfully to:', user.email);
-    }
-
     res.json({
       success: true,
-      message: 'If an account with that email exists, a reset link has been sent'
+      message: 'Password reset link sent to your email'
     });
-
   } catch (error) {
-    console.error('❌ Forgot password error:', error.message);
     next(error);
   }
 };
-
 // RESET PASSWORD - Enhanced version
 export const resetPassword = async (req, res, next) => {
   try {
