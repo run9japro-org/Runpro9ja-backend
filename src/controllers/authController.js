@@ -61,6 +61,13 @@ const generateStrongPassword = (length = 16) => {
 export const login = async (req, res, next) => {
   try {
     const { identifier, password } = req.body;
+    
+    console.log('🔍 Login attempt:', {
+      identifier,
+      passwordLength: password?.length,
+      identifierType: typeof identifier
+    });
+
     if (!identifier || !password) {
       return res.status(400).json({
         success: false,
@@ -68,46 +75,85 @@ export const login = async (req, res, next) => {
       });
     }
 
-    // ✅ find user by email OR username
+    // Find user by email OR username
     const user = await User.findOne({
       $or: [{ email: identifier }, { username: identifier }]
     }).select('+password');
 
-    if (!user)
-      return res.status(404).json({ success: false, message: 'User not found' });
-
-    // ✅ handle admin password rotation (every 24 hours)
-   // In your authController.js - login function
-if (user.role?.includes('admin')) { // ← Change to lowercase
-  const now = new Date();
-  const lastRotated = user.passwordLastRotated || user.createdAt;
-  const hoursSinceRotation = (now - new Date(lastRotated)) / (1000 * 60 * 60);
-
-  if (hoursSinceRotation >= 24) {
-    const newPass = generateStrongPassword(16);
-    user.password = await bcrypt.hash(newPass, SALT_ROUNDS);
-    user.passwordLastRotated = now;
-    await user.save();
-
-    return res.status(403).json({
-      success: false,
-      message: 'Password rotated automatically. Contact your super admin for your new password.'
+    console.log('👤 User lookup result:', {
+      found: !!user,
+      hasPassword: !!user?.password,
+      userRole: user?.role,
+      userEmail: user?.email,
+      userName: user?.username
     });
-  }
-}
 
-    // ✅ validate password
+    if (!user) {
+      return res.status(404).json({ 
+        success: false, 
+        message: 'User not found' 
+      });
+    }
+
+    // Check if password field exists
+    if (!user.password) {
+      console.log('⚠️ User has no password set (might be Google-only account)');
+      return res.status(400).json({
+        success: false,
+        message: 'This account uses Google authentication. Please sign in with Google.'
+      });
+    }
+
+    // Handle admin password rotation (every 24 hours)
+    if (user.role?.toLowerCase().includes('admin')) { // ← Fixed case sensitivity
+      const now = new Date();
+      const lastRotated = user.passwordLastRotated || user.createdAt;
+      const hoursSinceRotation = (now - new Date(lastRotated)) / (1000 * 60 * 60);
+
+      console.log('⏰ Admin password rotation check:', {
+        hoursSinceRotation,
+        needsRotation: hoursSinceRotation >= 24
+      });
+
+      if (hoursSinceRotation >= 24) {
+        const newPass = generateStrongPassword(16);
+        user.password = await bcrypt.hash(newPass, SALT_ROUNDS);
+        user.passwordLastRotated = now;
+        await user.save();
+
+        return res.status(403).json({
+          success: false,
+          message: 'Password rotated automatically. Contact your super admin for your new password.'
+        });
+      }
+    }
+
+    // Validate password
+    console.log('🔐 Comparing passwords...');
     const isPasswordValid = await bcrypt.compare(password, user.password);
-    if (!isPasswordValid)
-      return res.status(401).json({ success: false, message: 'Invalid credentials' });
+    
+    console.log('✅ Password validation result:', {
+      isValid: isPasswordValid,
+      providedPasswordLength: password.length,
+      hashedPasswordLength: user.password?.length
+    });
 
-    // ✅ issue token
+    if (!isPasswordValid) {
+      return res.status(401).json({ 
+        success: false, 
+        message: 'Invalid credentials' 
+      });
+    }
+
+    // Issue token
     const token = issueToken({
       id: user._id,
       role: user.role,
       name: user.fullName || user.username,
       email: user.email || null
     });
+
+    console.log('✅ Login successful for:', user.email || user.username);
 
     res.json({
       success: true,
@@ -121,7 +167,7 @@ if (user.role?.includes('admin')) { // ← Change to lowercase
       }
     });
   } catch (error) {
-    console.error('Login error:', error.message);
+    console.error('❌ Login error:', error.message);
     next(error);
   }
 };
