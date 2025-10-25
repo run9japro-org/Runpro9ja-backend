@@ -70,7 +70,7 @@ export const createAdmin = async (req, res, next) => {
     });
 
     // Optional notification
-    await notifyUser(newAdmin._id, "WELCOME");
+    await notifyUser(newAdmin._id, "WELCOME", []); // Pass empty array instead of undefined
 
     return res.status(201).json({
       success: true,

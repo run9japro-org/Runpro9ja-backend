@@ -88,13 +88,13 @@ export const NotificationTemplates = {
   }),
 
   // System notifications
-  WELCOME: () => ({
-    title: 'Welcome to RunPro 9ja!',
-    message: 'Thank you for joining us. We are excited to serve you with reliable errand services.',
-    type: 'system', // ✅ This must match your enum
-    priority: 'low',
-    actionUrl: '/services'
-  }),
+ WELCOME: (/* ignore any parameters */) => ({
+  title: 'Welcome to RunPro 9ja!',
+  message: 'Thank you for joining us. We are excited to serve you with reliable errand services.',
+  type: 'system',
+  priority: 'low',
+  actionUrl: '/services'
+}),
 // Add to your notificationService.js
 ORDER_STATUS_UPDATED: (orderId, status, note) => ({
   title: 'Order Status Updated',
