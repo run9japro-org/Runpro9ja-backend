@@ -68,7 +68,7 @@ export const sendPasswordResetEmail = async ({ to, name, resetUrl }) => {
                 
                 <div class="footer">
                     <p>Best regards,<br><strong>RunPro 9ja Team</strong></p>
-                    <p>Need help? Contact us at ${env.smtp.user}</p>
+                    <p>Need help? Contact us </p>
                 </div>
             </div>
         </div>
