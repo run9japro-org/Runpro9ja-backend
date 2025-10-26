@@ -51,9 +51,28 @@ export const requireRoles = (...roles) => (req, res, next) => {
 };
 
 export const requireAdmin = (req, res, next) => {
-  if (!req.user || !ADMIN_ROLES.has(req.user.role)) {
-    return res.status(403).json({ message: 'Admin only' });
+  console.log('🛡️ RequireAdmin Middleware Debug:');
+  console.log('Request user:', req.user);
+  console.log('User role:', req.user?.role);
+  console.log('User role type:', typeof req.user?.role);
+  console.log('ADMIN_ROLES:', ADMIN_ROLES);
+  console.log('Has admin role:', ADMIN_ROLES.has(req.user?.role));
+  
+  if (!req.user) {
+    console.log('❌ No user found in request');
+    return res.status(403).json({ message: 'Admin only - No user data' });
   }
+
+  if (!ADMIN_ROLES.has(req.user.role)) {
+    console.log('❌ Role not allowed. User role:', req.user.role, 'Allowed roles:', Array.from(ADMIN_ROLES));
+    return res.status(403).json({ 
+      message: 'Admin only',
+      userRole: req.user.role,
+      allowedRoles: Array.from(ADMIN_ROLES)
+    });
+  }
+
+  console.log('✅ Admin access granted for role:', req.user.role);
   next();
 };
 
