@@ -24,22 +24,13 @@ export const createOrder = async (req, res) => {
     let pickupLocation = pickup;
 
     if (!pickupLocation) {
-      const defaultAddress = user.addresses?.find(addr => addr.isDefault);
-
-      if (defaultAddress) {
-        pickupLocation = {
-          label: defaultAddress.label || 'Default Address',
-          addressLine: defaultAddress.addressLine,
-          city: defaultAddress.city,
-          state: defaultAddress.state,
-          country: defaultAddress.country,
-          lat: defaultAddress.lat,
-          lng: defaultAddress.lng,
-        };
+      // Use user's location as default if no pickup provided
+      if (user.location) {
+        pickupLocation = user.location; // Simple string like "lagos"
       } else {
         return res.status(400).json({
           success: false,
-          error: 'No pickup provided and no default address found. Please provide a pickup location.',
+          error: 'No pickup provided and no default location found. Please provide a pickup location.',
         });
       }
     }
@@ -90,7 +81,7 @@ export const createOrder = async (req, res) => {
       serviceScale,
       serviceCategory,
       details,
-      pickup: pickupLocation, // 🚀 Automatically set from user’s default address
+      pickup: pickupLocation, // 🚀 Now just a simple string like "lagos"
       destination,
       status: initialStatus,
       paymentStatus: 'pending',
@@ -147,7 +138,6 @@ export const createOrder = async (req, res) => {
     res.status(500).json({ success: false, error: err.message });
   }
 };
-
 
 export const submitQuotation = async (req, res) => {
   try {
