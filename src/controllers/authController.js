@@ -501,11 +501,15 @@ export const resetPassword = async (req, res, next) => {
       });
     }
 
+    // ✅ FIX: Hash the password before saving
+    const saltRounds = 12;
+    const hashedPassword = await bcrypt.hash(newPassword, saltRounds);
+
     // Update password and clear reset token
-    user.password = newPassword;
+    user.password = hashedPassword; // Store the hashed password
     user.resetPasswordToken = undefined;
     user.resetPasswordExpires = undefined;
-    user.passwordLastRotated = new Date(); // Update rotation timestamp
+    user.passwordLastRotated = new Date();
     
     await user.save();
 
