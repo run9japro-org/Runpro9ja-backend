@@ -160,38 +160,7 @@ export const submitQuotation = async (req, res) => {
 };
 
 
-export const acceptQuotation = async (req, res) => {
-  try {
-    const order = await Order.findById(req.params.id);
-    if (!order) return res.status(404).json({ success: false, error: 'Order not found' });
-
-    if (order.status !== 'quotation_provided') {
-      return res.status(400).json({ success: false, error: 'Quotation not available yet' });
-    }
-
-    // Change status to quotation_accepted (NOT awaiting_payment)
-    order.status = 'quotation_accepted';
-    order.timeline.push({ 
-      status: 'quotation_accepted', 
-      note: 'Customer accepted quotation. Ready for agent selection.' 
-    });
-
-    await order.save();
-
-    await notifyUser(order.customer, 'QUOTATION_ACCEPTED', [order._id], req.io);
-
-    res.json({
-      success: true,
-      message: 'Quotation accepted. Please select an agent to proceed.',
-      nextStep: 'agent_selection', // Frontend knows to show agent selection
-      order
-    });
-  } catch (err) {
-    res.status(500).json({ success: false, error: err.message });
-  }
-};
-
-// Step 2: Agent accepts the direct offer
+// Step 2: Agent accepts the direct offer - FIXED
 export const acceptOrder = async (req, res) => {
   try {
     const order = await Order.findById(req.params.id)
@@ -205,8 +174,15 @@ export const acceptOrder = async (req, res) => {
       });
     }
 
+    console.log('🔍 Order details:', {
+      orderId: order._id,
+      status: order.status,
+      requestedAgent: order.requestedAgent?._id,
+      currentUser: req.user.id
+    });
+
     // Check if this agent was the one requested
-    if (order.requestedAgent._id.toString() !== req.user.id) {
+    if (!order.requestedAgent || order.requestedAgent._id.toString() !== req.user.id) {
       return res.status(403).json({
         success: false,
         error: 'This order was not offered to you'
@@ -217,13 +193,13 @@ export const acceptOrder = async (req, res) => {
     if (order.status !== 'pending_agent_response') {
       return res.status(400).json({
         success: false,
-        error: 'Order is no longer available'
+        error: `Order is no longer available. Current status: ${order.status}`
       });
     }
 
     // Update order - agent accepted!
     order.status = 'accepted';
-    order.agent = req.user.id; // Assign to this agent
+    order.agent = req.user.id;
     order.timeline.push({ 
       status: 'accepted', 
       note: `Agent ${req.user.fullName} accepted the direct offer` 
@@ -251,9 +227,10 @@ export const acceptOrder = async (req, res) => {
       success: true,
       message: 'Order accepted successfully. Proceed to payment.',
       order,
-      nextStep: 'payment' // Frontend knows to proceed to payment
+      nextStep: 'payment'
     });
   } catch (err) {
+    console.error('Error accepting direct order:', err);
     res.status(500).json({ 
       success: false,
       error: err.message 
@@ -261,12 +238,13 @@ export const acceptOrder = async (req, res) => {
   }
 };
 
-// Step 3: Agent rejects the direct offer
+// Step 3: Agent rejects the direct offer - FIXED
 export const rejectOrder = async (req, res) => {
   try {
     const { reason } = req.body;
     const order = await Order.findById(req.params.id)
-      .populate('customer', 'fullName email phone');
+      .populate('customer', 'fullName email phone')
+      .populate('requestedAgent', 'fullName email phone');
 
     if (!order) {
       return res.status(404).json({ 
@@ -275,8 +253,15 @@ export const rejectOrder = async (req, res) => {
       });
     }
 
+    console.log('🔍 Reject order details:', {
+      orderId: order._id,
+      status: order.status,
+      requestedAgent: order.requestedAgent?._id,
+      currentUser: req.user.id
+    });
+
     // Check if this agent was the one requested
-    if (order.requestedAgent.toString() !== req.user.id) {
+    if (!order.requestedAgent || order.requestedAgent._id.toString() !== req.user.id) {
       return res.status(403).json({
         success: false,
         error: 'This order was not offered to you'
@@ -294,7 +279,7 @@ export const rejectOrder = async (req, res) => {
     order.requestedAgent = null; // Remove specific agent request
     
     order.timeline.push({ 
-      status: 'rejected', 
+      status: 'public', 
       note: `Requested agent declined. Order now public for all agents.` 
     });
     
@@ -316,6 +301,8 @@ export const rejectOrder = async (req, res) => {
           orderId: order._id,
           serviceType: order.serviceType,
           customerName: order.customer.fullName,
+          pickup: order.pickup,
+          destination: order.destination,
           reason: 'Previous agent declined'
         }
       });
@@ -327,6 +314,7 @@ export const rejectOrder = async (req, res) => {
       order
     });
   } catch (err) {
+    console.error('Error rejecting direct order:', err);
     res.status(500).json({ 
       success: false,
       error: err.message 
@@ -334,7 +322,7 @@ export const rejectOrder = async (req, res) => {
   }
 };
 
-// Step 4: Any agent can accept public orders
+// Step 4: Any agent can accept public orders - FIXED
 export const acceptPublicOrder = async (req, res) => {
   try {
     const order = await Order.findById(req.params.id)
@@ -348,11 +336,18 @@ export const acceptPublicOrder = async (req, res) => {
       });
     }
 
-    // Check if order is public
+    console.log('🔍 Accept public order details:', {
+      orderId: order._id,
+      status: order.status,
+      currentUser: req.user.id,
+      declinedBy: order.declinedBy.map(d => d.agent?._id)
+    });
+
+    // Check if order is public or available for acceptance
     if (order.status !== 'public') {
       return res.status(400).json({
         success: false,
-        error: 'Order is not available for public acceptance'
+        error: `Order is not available for public acceptance. Current status: ${order.status}`
       });
     }
 
@@ -365,6 +360,14 @@ export const acceptPublicOrder = async (req, res) => {
       return res.status(400).json({
         success: false,
         error: 'You have already declined this order'
+      });
+    }
+
+    // Check if order already has an agent
+    if (order.agent) {
+      return res.status(400).json({
+        success: false,
+        error: 'This order already has an assigned agent'
       });
     }
 
@@ -401,6 +404,7 @@ export const acceptPublicOrder = async (req, res) => {
       nextStep: 'payment'
     });
   } catch (err) {
+    console.error('Error accepting public order:', err);
     res.status(500).json({ 
       success: false,
       error: err.message 
@@ -408,13 +412,14 @@ export const acceptPublicOrder = async (req, res) => {
   }
 };
 
-// Get available public orders for agents
+// Get available public orders for agents - FIXED
 export const getPublicOrders = async (req, res) => {
   try {
     const { serviceType } = req.query;
     
     const query = {
       status: 'public',
+      agent: { $exists: false }, // No agent assigned yet
       'declinedBy.agent': { $ne: req.user.id } // Exclude orders this agent already declined
     };
     
@@ -426,7 +431,10 @@ export const getPublicOrders = async (req, res) => {
       .populate('customer', 'fullName email phone location')
       .populate('serviceCategory', 'name description')
       .populate('declinedBy.agent', 'fullName')
+      .populate('requestedAgent', 'fullName')
       .sort({ createdAt: -1 });
+
+    console.log(`🔍 Found ${orders.length} public orders for agent ${req.user.id}`);
 
     res.json({
       success: true,
@@ -434,6 +442,7 @@ export const getPublicOrders = async (req, res) => {
       count: orders.length
     });
   } catch (err) {
+    console.error('Error getting public orders:', err);
     res.status(500).json({ 
       success: false,
       error: err.message 
@@ -441,16 +450,20 @@ export const getPublicOrders = async (req, res) => {
   }
 };
 
-// Get orders specifically offered to an agent
+// Get orders specifically offered to an agent - FIXED
 export const getDirectOffers = async (req, res) => {
   try {
     const orders = await Order.find({
       requestedAgent: req.user.id,
-      status: 'pending_agent_response'
+      status: 'pending_agent_response',
+      agent: { $exists: false } // No agent assigned yet
     })
       .populate('customer', 'fullName email phone location')
       .populate('serviceCategory', 'name description')
+      .populate('requestedAgent', 'fullName email phone')
       .sort({ createdAt: -1 });
+
+    console.log(`🔍 Found ${orders.length} direct offers for agent ${req.user.id}`);
 
     res.json({
       success: true,
@@ -458,12 +471,44 @@ export const getDirectOffers = async (req, res) => {
       count: orders.length
     });
   } catch (err) {
+    console.error('Error getting direct offers:', err);
     res.status(500).json({ 
       success: false,
       error: err.message 
     });
   }
 };
+export const acceptQuotation = async (req, res) => {
+  try {
+    const order = await Order.findById(req.params.id);
+    if (!order) return res.status(404).json({ success: false, error: 'Order not found' });
+
+    if (order.status !== 'quotation_provided') {
+      return res.status(400).json({ success: false, error: 'Quotation not available yet' });
+    }
+
+    // Change status to quotation_accepted (NOT awaiting_payment)
+    order.status = 'quotation_accepted';
+    order.timeline.push({ 
+      status: 'quotation_accepted', 
+      note: 'Customer accepted quotation. Ready for agent selection.' 
+    });
+
+    await order.save();
+
+    await notifyUser(order.customer, 'QUOTATION_ACCEPTED', [order._id], req.io);
+
+    res.json({
+      success: true,
+      message: 'Quotation accepted. Please select an agent to proceed.',
+      nextStep: 'agent_selection', // Frontend knows to show agent selection
+      order
+    });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+};
+
 
 // Get customer orders - FIXED
 export const getCustomerOrders = async (req, res) => {
