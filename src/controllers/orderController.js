@@ -17,22 +17,15 @@ export const createOrder = async (req, res) => {
       ...orderData
     } = req.body;
 
-    // Fetch user details from DB (to get addresses)
+    // Fetch user details from DB
     const user = req.user;
 
-    // 1️⃣ Determine pickup location
-    let pickupLocation = pickup;
-
-    if (!pickupLocation) {
-      // Use user's location as default if no pickup provided
-      if (user.location) {
-        pickupLocation = user.location; // Simple string like "lagos"
-      } else {
-        return res.status(400).json({
-          success: false,
-          error: 'No pickup provided and no default location found. Please provide a pickup location.',
-        });
-      }
+    // 1️⃣ Validate pickup location is provided
+    if (!pickup) {
+      return res.status(400).json({
+        success: false,
+        error: 'Pickup location is required. Please provide a pickup location.',
+      });
     }
 
     // 2️⃣ Validate required professional fields
@@ -81,7 +74,7 @@ export const createOrder = async (req, res) => {
       serviceScale,
       serviceCategory,
       details,
-      pickup: pickupLocation, // 🚀 Now just a simple string like "lagos"
+      pickup: pickup, // 🚀 No default - must be provided
       destination,
       status: initialStatus,
       paymentStatus: 'pending',
