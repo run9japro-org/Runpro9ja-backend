@@ -37,12 +37,7 @@ export const createOrder = async (req, res) => {
           error: 'details is required for professional orders',
         });
       }
-      if (!destination) {
-        return res.status(400).json({
-          success: false,
-          error: 'destination is required for professional orders',
-        });
-      }
+      
     }
 
     // 3️⃣ Determine initial status
