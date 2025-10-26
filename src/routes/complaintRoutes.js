@@ -7,7 +7,7 @@ import {
   deleteComplaint,
   getComplaintStats
 } from "../controllers/complaintController.js";
-import { authGuard, requireAdmin} from "../middlewares/auth.js";
+import { authGuard} from "../middlewares/auth.js";
 
 const router = express.Router();
 
