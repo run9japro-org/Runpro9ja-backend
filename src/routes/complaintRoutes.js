@@ -18,9 +18,9 @@ router.post("/", authGuard, createComplaint);
 router.get("/my", authGuard, getUserComplaints);
 
 // Admin routes
-router.get("/", requireAdmin, getComplaints);
-router.put("/:id", requireAdmin, respondToComplaint);
-router.delete("/:id", requireAdmin, deleteComplaint);
-router.get("/stats/summary", requireAdmin, getComplaintStats);
+router.get("/", authGuard, getComplaints);
+router.put("/:id", authGuard, respondToComplaint);
+router.delete("/:id", authGuard, deleteComplaint);
+router.get("/stats/summary", authGuard, getComplaintStats);
 
 export default router;
