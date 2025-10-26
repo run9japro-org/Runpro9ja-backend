@@ -21,12 +21,7 @@ export const createOrder = async (req, res) => {
     const user = req.user;
 
     // 1️⃣ Validate pickup location is provided
-    if (!pickup) {
-      return res.status(400).json({
-        success: false,
-        error: 'Pickup location is required. Please provide a pickup location.',
-      });
-    }
+    
 
     // 2️⃣ Validate required professional fields
     if (orderType === 'professional') {
