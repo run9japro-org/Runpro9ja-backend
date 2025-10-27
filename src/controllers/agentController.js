@@ -181,12 +181,10 @@ export const getAvailableAgents = async (req, res, next) => {
     // Build query based on service type
     let query = {};
 
-    // Filter by service type if provided
     if (serviceType) {
-      query.serviceType = new RegExp(serviceType, 'i'); // Case-insensitive search
+      query.serviceType = new RegExp(serviceType, 'i');
     }
 
-    // Alternative: Filter by service category ID if provided
     if (categoryId) {
       query.services = categoryId;
     }
@@ -198,7 +196,7 @@ export const getAvailableAgents = async (req, res, next) => {
 
     console.log(`✅ Found ${agents.length} agents for service: ${serviceType}`);
 
-    // Format the response for customers
+    // Format the response for customers - FIXED: Use user._id instead of agent._id
     const availableAgents = agents.map(agent => {
       // Calculate realistic price based on service type and experience
       const price = calculateDeliveryPrice(
@@ -207,14 +205,14 @@ export const getAvailableAgents = async (req, res, next) => {
         agent.servicesOffered
       );
       
-      // Determine vehicle type based on service
       const vehicleType = getVehicleType(agent.serviceType);
-      
-      // Create agent bio from available data
       const bio = createAgentBio(agent);
 
       return {
-        _id: agent._id,
+        // ✅ FIXED: Use user._id instead of agent._id
+        _id: agent.user?._id || 'unknown', // THIS IS THE USER ID THAT ORDER CREATION NEEDS
+        profileId: agent._id, // Keep profile ID for reference if needed
+        
         user: {
           _id: agent.user?._id || 'unknown',
           fullName: agent.user?.fullName || 'Unknown Agent',
@@ -236,7 +234,6 @@ export const getAvailableAgents = async (req, res, next) => {
         distance: (Math.random() * 5 + 1).toFixed(1),
         price: price,
         vehicleType: vehicleType,
-        // Include service categories for filtering
         serviceCategories: agent.services || []
       };
     });
