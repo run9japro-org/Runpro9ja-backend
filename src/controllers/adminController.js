@@ -938,35 +938,22 @@ export const getServiceProviders = async (req, res, next) => {
         { 'user.fullName': { $regex: search, $options: 'i' } },
         { serviceType: { $regex: search, $options: 'i' } },
         { 'user.email': { $regex: search, $options: 'i' } },
-        { 'user.phone': { $regex: search, $options: 'i' } }
+        { 'user.phone': { $regex: search, $options: 'i' } },
+        { 'user.location': { $regex: search, $options: 'i' } } // Search in user location too
       ];
     }
 
     const agents = await AgentProfile.find(query)
-      .populate('user', 'fullName email phone location profileImage')
+      .populate('user', 'fullName email phone location profileImage') // Include location and phone from user
       .populate('services', 'name')
       .sort({ createdAt: -1 })
       .limit(parseInt(limit));
 
     const serviceProviders = agents.map(agent => {
-      // Get location from USER model (not AgentProfile)
-      let location = 'Location not specified';
-      if (agent.user?.location) {
-        location = agent.user.location;
-      } else if (agent.location) {
-        // Fallback to agent profile location if user location doesn't exist
-        if (typeof agent.location === 'object') {
-          location = [
-            agent.location.city,
-            agent.location.state,
-            agent.location.country
-          ].filter(Boolean).join(', ') || 'Location not specified';
-        } else {
-          location = agent.location;
-        }
-      }
-
-      // Get phone from USER model
+      // CORRECT: Get location from USER model - this is where it's actually stored
+      const location = agent.user?.location || 'Location not specified';
+      
+      // CORRECT: Get phone from USER model - this is where it's actually stored
       const phone = agent.user?.phone || 'Not provided';
 
       // Calculate work rate based on completed jobs
@@ -989,9 +976,9 @@ export const getServiceProviders = async (req, res, next) => {
         service: service,
         status: getAgentStatus(agent),
         workRate: workRate,
-        location: location,
+        location: location, // Now correctly from user.location
         email: agent.user?.email || 'Not provided',
-        phone: phone,
+        phone: phone, // Now correctly from user.phone
         profileImage: agent.user?.profileImage || agent.profileImage,
         joinedDate: agent.createdAt,
         completedOrders: agent.completedJobs || 0,
@@ -1001,7 +988,14 @@ export const getServiceProviders = async (req, res, next) => {
         verificationStatus: agent.verificationStatus || 'pending',
         availability: agent.availability || 'unknown',
         currentWorkload: agent.currentWorkload || 0,
-        maxWorkload: agent.maxWorkload || 10
+        maxWorkload: agent.maxWorkload || 10,
+        // Debug info to verify data source
+        _debug: {
+          userLocation: agent.user?.location,
+          userPhone: agent.user?.phone,
+          agentLocation: agent.location, // This might be empty
+          agentPhone: agent.phone // This might be empty
+        }
       };
     });
 
@@ -1040,7 +1034,7 @@ export const getPotentialProviders = async (req, res, next) => {
         { verificationStatus: { $in: ['pending', 'reviewing', 'waitlisted'] } }
       ]
     })
-      .populate('user', 'fullName email phone location') // Include location from user
+      .populate('user', 'fullName email phone location') // CORRECT: Include location and phone from user
       .populate('services', 'name')
       .sort({ createdAt: -1 })
       .limit(parseInt(limit));
@@ -1048,24 +1042,10 @@ export const getPotentialProviders = async (req, res, next) => {
     console.log(`🔍 Found ${potentialAgents.length} potential agents`);
 
     const potentialProviders = potentialAgents.map(agent => {
-      // Get location from USER model (this is where it's actually stored)
-      let location = 'Location not specified';
-      if (agent.user?.location) {
-        location = agent.user.location;
-      } else if (agent.location) {
-        // Fallback to agent profile location
-        if (typeof agent.location === 'object') {
-          location = [
-            agent.location.city,
-            agent.location.state,
-            agent.location.country
-          ].filter(Boolean).join(', ') || 'Location not specified';
-        } else {
-          location = agent.location;
-        }
-      }
+      // CORRECT: Get location from USER model - this is where it's actually stored
+      const location = agent.user?.location || 'Location not specified';
 
-      // Get phone from USER model
+      // CORRECT: Get phone from USER model - this is where it's actually stored
       const phone = agent.user?.phone || 'Not provided';
 
       // Determine what they applied for
@@ -1093,8 +1073,8 @@ export const getPotentialProviders = async (req, res, next) => {
         name: agent.user?.fullName || 'Applicant',
         appliedFor: appliedFor,
         experience: experience,
-        location: location,
-        phone: phone,
+        location: location, // Now correctly from user.location
+        phone: phone, // Now correctly from user.phone
         email: agent.user?.email || 'Not provided',
         status: agent.verificationStatus || (agent.isVerified ? 'verified' : 'pending'),
         appliedDate: agent.createdAt,
@@ -1104,9 +1084,16 @@ export const getPotentialProviders = async (req, res, next) => {
         hasDocuments: !!(agent.documents && agent.documents.length > 0),
         rating: agent.rating || 0,
         completedJobs: agent.completedJobs || 0,
-        // Additional contact info from user
+        // Additional contact info from user (for debugging)
         userLocation: agent.user?.location || 'Not specified',
-        userPhone: agent.user?.phone || 'Not provided'
+        userPhone: agent.user?.phone || 'Not provided',
+        // Debug info
+        _debug: {
+          userLocation: agent.user?.location,
+          userPhone: agent.user?.phone,
+          agentLocation: agent.location, // This might be empty
+          agentPhone: agent.phone // This might be empty
+        }
       };
     });
 
@@ -1117,7 +1104,8 @@ export const getPotentialProviders = async (req, res, next) => {
         provider.name.toLowerCase().includes(search.toLowerCase()) ||
         provider.appliedFor.toLowerCase().includes(search.toLowerCase()) ||
         provider.email.toLowerCase().includes(search.toLowerCase()) ||
-        provider.location.toLowerCase().includes(search.toLowerCase())
+        provider.location.toLowerCase().includes(search.toLowerCase()) ||
+        provider.phone.includes(search) // Search in phone numbers too
       );
     }
 
