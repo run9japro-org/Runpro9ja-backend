@@ -42,12 +42,12 @@ export const register = async (req, res, next) => {
       age--;
     }
 
-    if (age < 18) {
-      return res.status(400).json({
-        success: false,
-        message: "You must be at least 18 years old to register"
-      });
-    }
+    // if (age < 18) {
+    //   return res.status(400).json({
+    //     success: false,
+    //     message: "You must be at least 18 years old to register"
+    //   });
+    // }
 
     // Check for existing user
     const existing = await User.findOne({ 
