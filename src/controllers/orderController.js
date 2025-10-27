@@ -3,7 +3,6 @@ import { notifyUser } from '../services/notificationService.js';
 import { AgentProfile } from '../models/AgentProfile.js';
 // Step 1: Customer creates order with selected agent
 // In your orderController.js - UPDATED createOrder function
-
 export const createOrder = async (req, res) => {
   try {
     const {
@@ -47,7 +46,7 @@ export const createOrder = async (req, res) => {
       }
     }
 
-    // 3️⃣ Determine initial status based on order type and requested agent
+    // 3️⃣ FIXED: Determine initial status based on order type and requested agent
     let initialStatus, timelineNote;
     
     if (orderType === 'professional') {
@@ -59,10 +58,9 @@ export const createOrder = async (req, res) => {
         timelineNote = 'Large scale service requested. Representative will inspect before quotation.';
       }
     } else {
-      // For normal orders, if there's a requested agent, wait for their response
-      // If no requested agent, make it public immediately
+      // FIXED: For normal orders with requested agent, use 'pending_agent_response'
       if (requestedAgent) {
-        initialStatus = 'requested';
+        initialStatus = 'pending_agent_response'; // CHANGED FROM 'requested'
         timelineNote = 'Direct offer sent to agent. Waiting for response.';
       } else {
         initialStatus = 'public';
@@ -70,18 +68,18 @@ export const createOrder = async (req, res) => {
       }
     }
 
-    // 4️⃣ Create Order - FIXED: Properly set requestedAgent
+    // 4️⃣ Create Order
     const order = new Order({
       ...orderData,
       customer: user.id,
-      requestedAgent: requestedAgent || null, // This must be set properly
+      requestedAgent: requestedAgent || null,
       orderType,
       serviceScale,
       serviceCategory,
       details,
       pickup: pickup,
       destination,
-      status: initialStatus,
+      status: initialStatus, // This will now be 'pending_agent_response' for direct offers
       paymentStatus: 'pending',
     });
 
@@ -92,7 +90,7 @@ export const createOrder = async (req, res) => {
 
     await order.save();
     await order.populate('serviceCategory', 'name description');
-    await order.populate('requestedAgent', 'fullName email phone'); // Populate requested agent
+    await order.populate('requestedAgent', 'fullName email phone');
 
     // 5️⃣ Notify the user
     await notifyUser(
@@ -112,6 +110,7 @@ export const createOrder = async (req, res) => {
       );
 
       console.log(`📨 Direct offer sent to agent ${requestedAgent} for order ${order._id}`);
+      console.log(`📊 Order status set to: ${initialStatus}`);
     }
 
     // 7️⃣ Notify available agents or representatives for professional orders
@@ -159,6 +158,11 @@ export const createOrder = async (req, res) => {
             ? 'Order created successfully. Direct offer sent to the agent.'
             : 'Order created successfully. Available for all agents.',
       order,
+      debug: {
+        status: initialStatus,
+        hasRequestedAgent: !!requestedAgent,
+        orderType: orderType
+      }
     });
   } catch (err) {
     console.error('Error creating order:', err);

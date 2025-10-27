@@ -6,6 +6,7 @@ const statusSchema = new mongoose.Schema({
   status: { 
     type: String, 
     enum: [
+      'pending_agent_response',
       'requested', 
       'inspection_scheduled', 
       'inspection_completed',
