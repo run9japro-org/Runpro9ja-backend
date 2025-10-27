@@ -173,7 +173,7 @@ export const getDirectOffers = async (req, res) => {
     
     const orders = await Order.find({
       requestedAgent: req.user.id, // This should match the agent's user ID
-      status: 'pending_agent_response',
+      status: 'requested',
       agent: { $exists: false } // No agent assigned yet
     })
       .populate('customer', 'fullName email phone location')
