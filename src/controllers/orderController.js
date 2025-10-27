@@ -20,10 +20,7 @@ export const createOrder = async (req, res) => {
     // Fetch user details from DB
     const user = req.user;
 
-    // 1️⃣ Validate pickup location is provided
-    
-
-    // 2️⃣ Validate required professional fields
+    // 1️⃣ Validate required fields based on order type
     if (orderType === 'professional') {
       if (!serviceCategory) {
         return res.status(400).json({
@@ -37,11 +34,22 @@ export const createOrder = async (req, res) => {
           error: 'details is required for professional orders',
         });
       }
-      
     }
 
-    // 3️⃣ Determine initial status
+    // 2️⃣ Validate that if requestedAgent is provided, it's a valid agent
+    if (requestedAgent) {
+      const agentExists = await AgentProfile.findOne({ user: requestedAgent });
+      if (!agentExists) {
+        return res.status(400).json({
+          success: false,
+          error: 'Requested agent not found or is not a valid service provider'
+        });
+      }
+    }
+
+    // 3️⃣ Determine initial status based on order type and requested agent
     let initialStatus, timelineNote;
+    
     if (orderType === 'professional') {
       if (serviceScale === 'minimum') {
         initialStatus = 'requested';
@@ -51,20 +59,27 @@ export const createOrder = async (req, res) => {
         timelineNote = 'Large scale service requested. Representative will inspect before quotation.';
       }
     } else {
-      initialStatus = 'pending_agent_response';
-      timelineNote = 'Waiting for agent response.';
+      // For normal orders, if there's a requested agent, wait for their response
+      // If no requested agent, make it public immediately
+      if (requestedAgent) {
+        initialStatus = 'pending_agent_response';
+        timelineNote = 'Direct offer sent to agent. Waiting for response.';
+      } else {
+        initialStatus = 'public';
+        timelineNote = 'Order created and available for all agents.';
+      }
     }
 
-    // 4️⃣ Create Order
+    // 4️⃣ Create Order - FIXED: Properly set requestedAgent
     const order = new Order({
       ...orderData,
       customer: user.id,
-      requestedAgent: requestedAgent || null,
+      requestedAgent: requestedAgent || null, // This must be set properly
       orderType,
       serviceScale,
       serviceCategory,
       details,
-      pickup: pickup, // 🚀 No default - must be provided
+      pickup: pickup,
       destination,
       status: initialStatus,
       paymentStatus: 'pending',
@@ -77,6 +92,7 @@ export const createOrder = async (req, res) => {
 
     await order.save();
     await order.populate('serviceCategory', 'name description');
+    await order.populate('requestedAgent', 'fullName email phone'); // Populate requested agent
 
     // 5️⃣ Notify the user
     await notifyUser(
@@ -86,7 +102,19 @@ export const createOrder = async (req, res) => {
       req.io
     );
 
-    // 6️⃣ Notify available agents or representatives
+    // 6️⃣ Notify the requested agent if it's a direct offer
+    if (requestedAgent && orderType === 'normal') {
+      await notifyUser(
+        requestedAgent,
+        'DIRECT_ORDER_OFFER',
+        [order._id, user.fullName, order.serviceCategory?.name],
+        req.io
+      );
+
+      console.log(`📨 Direct offer sent to agent ${requestedAgent} for order ${order._id}`);
+    }
+
+    // 7️⃣ Notify available agents or representatives for professional orders
     if (orderType === 'professional' && req.io) {
       const eventData = {
         orderId: order._id,
@@ -105,7 +133,21 @@ export const createOrder = async (req, res) => {
       );
     }
 
-    // ✅ 7️⃣ Response
+    // 8️⃣ For public orders, broadcast to all agents
+    if (initialStatus === 'public' && req.io) {
+      req.io.emit('new_public_order', {
+        type: 'PUBLIC_ORDER_AVAILABLE',
+        data: {
+          orderId: order._id,
+          serviceCategory: order.serviceCategory?.name,
+          customerName: user.fullName,
+          pickup: order.pickup,
+          destination: order.destination,
+        }
+      });
+    }
+
+    // ✅ Response
     res.status(201).json({
       success: true,
       message:
@@ -113,7 +155,9 @@ export const createOrder = async (req, res) => {
           ? serviceScale === 'minimum'
             ? 'Minimum scale service requested. You can now select an agent.'
             : 'Large scale service requested. A representative will contact you for inspection and quotation.'
-          : 'Order created successfully. Waiting for agent response.',
+          : requestedAgent
+            ? 'Order created successfully. Direct offer sent to the agent.'
+            : 'Order created successfully. Available for all agents.',
       order,
     });
   } catch (err) {
@@ -122,45 +166,48 @@ export const createOrder = async (req, res) => {
   }
 };
 
-export const submitQuotation = async (req, res) => {
+// Get orders specifically offered to an agent - FIXED VERSION
+export const getDirectOffers = async (req, res) => {
   try {
-    const { quotationAmount, quotationDetails, recommendedAgents } = req.body;
+    console.log('🔍 Fetching direct offers for agent:', req.user.id);
+    
+    const orders = await Order.find({
+      requestedAgent: req.user.id, // This should match the agent's user ID
+      status: 'pending_agent_response',
+      agent: { $exists: false } // No agent assigned yet
+    })
+      .populate('customer', 'fullName email phone location')
+      .populate('serviceCategory', 'name description')
+      .populate('requestedAgent', 'fullName email phone')
+      .sort({ createdAt: -1 });
 
-    const order = await Order.findById(req.params.id);
-    if (!order) return res.status(404).json({ success: false, error: 'Order not found' });
-
-    if (order.orderType !== 'professional') {
-      return res.status(400).json({ success: false, error: 'Not a professional order' });
-    }
-
-    order.quotationAmount = quotationAmount;
-    order.quotationDetails = quotationDetails;
-    order.recommendedAgents = recommendedAgents || [];
-    order.quotationProvidedAt = new Date();
-    order.status = 'quotation_provided';
-
-    order.timeline.push({
-      status: 'quotation_provided',
-      note: `Quotation submitted by ${req.user.fullName}`
+    console.log(`✅ Found ${orders.length} direct offers for agent ${req.user.id}`);
+    
+    // Debug: Log the orders found
+    orders.forEach((order, index) => {
+      console.log(`📦 Direct Offer ${index + 1}:`, {
+        orderId: order._id,
+        requestedAgent: order.requestedAgent?._id,
+        customer: order.customer?.fullName,
+        status: order.status
+      });
     });
-
-    await order.save();
-
-    // Notify customer
-    await notifyUser(order.customer, 'QUOTATION_READY', [order._id], req.io);
 
     res.json({
       success: true,
-      message: 'Quotation submitted successfully',
-      order
+      orders,
+      count: orders.length
     });
   } catch (err) {
-    res.status(500).json({ success: false, error: err.message });
+    console.error('Error getting direct offers:', err);
+    res.status(500).json({ 
+      success: false,
+      error: err.message 
+    });
   }
 };
 
-
-// Step 2: Agent accepts the direct offer - FIXED
+// Step 2: Agent accepts the direct offer - FIXED VERSION
 export const acceptOrder = async (req, res) => {
   try {
     const order = await Order.findById(req.params.id)
@@ -174,23 +221,29 @@ export const acceptOrder = async (req, res) => {
       });
     }
 
-    console.log('🔍 Order details:', {
+    console.log('🔍 Accept order details:', {
       orderId: order._id,
       status: order.status,
       requestedAgent: order.requestedAgent?._id,
-      currentUser: req.user.id
+      currentUser: req.user.id,
+      orderType: order.orderType
     });
 
-    // Check if this agent was the one requested
-    if (!order.requestedAgent || order.requestedAgent._id.toString() !== req.user.id) {
+    // Check if this agent was the one requested - FIXED: Compare user IDs properly
+    if (!order.requestedAgent || order.requestedAgent._id.toString() !== req.user.id.toString()) {
+      console.log('❌ Agent mismatch:', {
+        requestedAgent: order.requestedAgent?._id,
+        currentUser: req.user.id
+      });
       return res.status(403).json({
         success: false,
         error: 'This order was not offered to you'
       });
     }
 
-    // Check if order is still waiting for response
-    if (order.status !== 'pending_agent_response') {
+    // Check if order is still waiting for response - FIXED: Handle both statuses
+    const validStatuses = ['pending_agent_response', 'requested'];
+    if (!validStatuses.includes(order.status)) {
       return res.status(400).json({
         success: false,
         error: `Order is no longer available. Current status: ${order.status}`
@@ -206,6 +259,8 @@ export const acceptOrder = async (req, res) => {
     });
     
     await order.save();
+
+    console.log(`✅ Order ${order._id} accepted by agent ${req.user.id}`);
 
     // ✅ Notify customer that agent accepted
     await notifyUser(
@@ -237,6 +292,90 @@ export const acceptOrder = async (req, res) => {
     });
   }
 };
+
+// DEBUG: Method to check order data and agent relationships
+export const debugOrderAgentRelationships = async (req, res) => {
+  try {
+    const agentId = req.user.id;
+    
+    console.log('🐛 ===== DEBUG ORDER-AGENT RELATIONSHIPS =====');
+    console.log(`👤 Current Agent User ID: ${agentId}`);
+    
+    // Check agent profile
+    const agentProfile = await AgentProfile.findOne({ user: agentId });
+    console.log(`🔍 Agent Profile:`, agentProfile ? 'Found' : 'Not Found');
+    
+    // Check orders where this agent is requested
+    const directOffers = await Order.find({
+      requestedAgent: agentId
+    })
+    .populate('customer', 'fullName')
+    .populate('requestedAgent', 'fullName')
+    .select('_id status requestedAgent customer serviceCategory');
+    
+    console.log(`📦 Orders where agent is requested: ${directOffers.length}`);
+    directOffers.forEach(order => {
+      console.log(`   - Order ${order._id}: Status=${order.status}, Customer=${order.customer?.fullName}`);
+    });
+    
+    // Check orders in pending_agent_response status
+    const pendingOrders = await Order.find({
+      status: 'pending_agent_response'
+    })
+    .populate('requestedAgent', 'fullName')
+    .select('_id status requestedAgent serviceCategory');
+    
+    console.log(`⏳ All orders in pending_agent_response: ${pendingOrders.length}`);
+    pendingOrders.forEach(order => {
+      console.log(`   - Order ${order._id}: RequestedAgent=${order.requestedAgent?._id} (${order.requestedAgent?.fullName})`);
+    });
+    
+    res.json({
+      success: true,
+      agentId,
+      directOffersCount: directOffers.length,
+      pendingOrdersCount: pendingOrders.length,
+      message: 'Check server console for debug information'
+    });
+    
+  } catch (err) {
+    console.error('Debug error:', err);
+    res.status(500).json({ 
+      success: false,
+      error: err.message 
+    });
+  }
+};
+
+// Get agent's accepted orders
+export const getAgentAcceptedOrders = async (req, res) => {
+  try {
+    const orders = await Order.find({
+      agent: req.user.id,
+      status: 'accepted'
+    })
+      .populate('customer', 'fullName email phone location')
+      .populate('serviceCategory', 'name description')
+      .sort({ createdAt: -1 });
+
+    res.json({
+      success: true,
+      orders,
+      count: orders.length
+    });
+  } catch (err) {
+    console.error('Error getting agent accepted orders:', err);
+    res.status(500).json({ 
+      success: false,
+      error: err.message 
+    });
+  }
+};
+
+
+
+
+// Step 2: Agent accepts the direct offer - FIXED
 
 // Step 3: Agent rejects the direct offer - FIXED
 export const rejectOrder = async (req, res) => {
@@ -451,33 +590,7 @@ export const getPublicOrders = async (req, res) => {
 };
 
 // Get orders specifically offered to an agent - FIXED
-export const getDirectOffers = async (req, res) => {
-  try {
-    const orders = await Order.find({
-      requestedAgent: req.user.id,
-      status: 'pending_agent_response',
-      agent: { $exists: false } // No agent assigned yet
-    })
-      .populate('customer', 'fullName email phone location')
-      .populate('serviceCategory', 'name description')
-      .populate('requestedAgent', 'fullName email phone')
-      .sort({ createdAt: -1 });
 
-    console.log(`🔍 Found ${orders.length} direct offers for agent ${req.user.id}`);
-
-    res.json({
-      success: true,
-      orders,
-      count: orders.length
-    });
-  } catch (err) {
-    console.error('Error getting direct offers:', err);
-    res.status(500).json({ 
-      success: false,
-      error: err.message 
-    });
-  }
-};
 export const acceptQuotation = async (req, res) => {
   try {
     const order = await Order.findById(req.params.id);
@@ -1248,5 +1361,42 @@ export const getOrderById = async (req, res) => {
       success: false,
       error: 'Internal server error while fetching order'
     });
+  }
+};
+
+export const submitQuotation = async (req, res) => {
+  try {
+    const { quotationAmount, quotationDetails, recommendedAgents } = req.body;
+
+    const order = await Order.findById(req.params.id);
+    if (!order) return res.status(404).json({ success: false, error: 'Order not found' });
+
+    if (order.orderType !== 'professional') {
+      return res.status(400).json({ success: false, error: 'Not a professional order' });
+    }
+
+    order.quotationAmount = quotationAmount;
+    order.quotationDetails = quotationDetails;
+    order.recommendedAgents = recommendedAgents || [];
+    order.quotationProvidedAt = new Date();
+    order.status = 'quotation_provided';
+
+    order.timeline.push({
+      status: 'quotation_provided',
+      note: `Quotation submitted by ${req.user.fullName}`
+    });
+
+    await order.save();
+
+    // Notify customer
+    await notifyUser(order.customer, 'QUOTATION_READY', [order._id], req.io);
+
+    res.json({
+      success: true,
+      message: 'Quotation submitted successfully',
+      order
+    });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
   }
 };

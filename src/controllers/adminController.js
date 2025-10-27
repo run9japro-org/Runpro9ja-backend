@@ -908,6 +908,7 @@ export const getActiveDeliveries = async (req, res, next) => {
 // Add to your adminController.js
 
 // GET /api/admins/service-providers
+// GET /api/admins/service-providers
 export const getServiceProviders = async (req, res, next) => {
   try {
     const requester = req.user;
@@ -916,44 +917,104 @@ export const getServiceProviders = async (req, res, next) => {
       return res.status(403).json({ message: 'Forbidden' });
     }
 
-    const { limit = 50, status } = req.query;
+    const { limit = 50, status, search } = req.query;
 
     let query = {};
-    if (status) {
-      query.verificationStatus = status;
+    
+    // Status filter
+    if (status && status !== 'all') {
+      if (status === 'active') {
+        query.isVerified = true;
+      } else if (status === 'inactive') {
+        query.isVerified = false;
+      } else {
+        query.verificationStatus = status;
+      }
+    }
+
+    // Search filter
+    if (search) {
+      query.$or = [
+        { 'user.fullName': { $regex: search, $options: 'i' } },
+        { serviceType: { $regex: search, $options: 'i' } },
+        { 'user.email': { $regex: search, $options: 'i' } },
+        { 'user.phone': { $regex: search, $options: 'i' } }
+      ];
     }
 
     const agents = await AgentProfile.find(query)
-      .populate('user', 'fullName email phone profileImage')
+      .populate('user', 'fullName email phone location profileImage')
       .populate('services', 'name')
       .sort({ createdAt: -1 })
       .limit(parseInt(limit));
 
     const serviceProviders = agents.map(agent => {
-      // Calculate work rate based on completed orders
+      // Get location from USER model (not AgentProfile)
+      let location = 'Location not specified';
+      if (agent.user?.location) {
+        location = agent.user.location;
+      } else if (agent.location) {
+        // Fallback to agent profile location if user location doesn't exist
+        if (typeof agent.location === 'object') {
+          location = [
+            agent.location.city,
+            agent.location.state,
+            agent.location.country
+          ].filter(Boolean).join(', ') || 'Location not specified';
+        } else {
+          location = agent.location;
+        }
+      }
+
+      // Get phone from USER model
+      const phone = agent.user?.phone || 'Not provided';
+
+      // Calculate work rate based on completed jobs
       const workRate = calculateWorkRate(agent);
       
+      // Determine service type
+      let service = 'General Service';
+      if (agent.serviceType) {
+        service = agent.serviceType;
+      } else if (agent.services && agent.services.length > 0) {
+        service = agent.services.map(s => s.name).join(', ');
+      } else if (agent.servicesOffered) {
+        service = agent.servicesOffered;
+      }
+
       return {
         id: agent._id,
-        agentId: `SP${agent._id.toString().slice(-4)}`,
+        agentId: `SP${agent._id.toString().slice(-6).toUpperCase()}`,
         name: agent.user?.fullName || 'Unknown Agent',
-        service: agent.serviceType || agent.services?.[0]?.name || 'General Service',
-        status: agent.isVerified ? 'Active' : 'Inactive',
+        service: service,
+        status: getAgentStatus(agent),
         workRate: workRate,
-        location: agent.location || agent.address || 'Location not specified',
-        email: agent.user?.email,
-        phone: agent.user?.phone,
-        profileImage: agent.user?.profileImage,
+        location: location,
+        email: agent.user?.email || 'Not provided',
+        phone: phone,
+        profileImage: agent.user?.profileImage || agent.profileImage,
         joinedDate: agent.createdAt,
-        completedOrders: agent.completedOrders || 0,
-        totalOrders: agent.totalOrders || 0
+        completedOrders: agent.completedJobs || 0,
+        totalOrders: (agent.completedJobs || 0) + (agent.currentWorkload || 0),
+        rating: agent.rating || 0,
+        isVerified: agent.isVerified,
+        verificationStatus: agent.verificationStatus || 'pending',
+        availability: agent.availability || 'unknown',
+        currentWorkload: agent.currentWorkload || 0,
+        maxWorkload: agent.maxWorkload || 10
       };
     });
 
     res.json({
       success: true,
       serviceProviders,
-      total: serviceProviders.length
+      total: serviceProviders.length,
+      statistics: {
+        total: serviceProviders.length,
+        active: serviceProviders.filter(sp => sp.status === 'Active').length,
+        pending: serviceProviders.filter(sp => sp.status === 'Pending').length,
+        verified: serviceProviders.filter(sp => sp.isVerified).length
+      }
     });
   } catch (err) {
     console.error('Service providers error:', err);
@@ -970,7 +1031,7 @@ export const getPotentialProviders = async (req, res, next) => {
       return res.status(403).json({ message: 'Forbidden' });
     }
 
-    const { limit = 20 } = req.query;
+    const { limit = 20, search } = req.query;
 
     // Get agents that are not yet verified or are pending
     const potentialAgents = await AgentProfile.find({
@@ -979,29 +1040,99 @@ export const getPotentialProviders = async (req, res, next) => {
         { verificationStatus: { $in: ['pending', 'reviewing', 'waitlisted'] } }
       ]
     })
-      .populate('user', 'fullName email phone')
+      .populate('user', 'fullName email phone location') // Include location from user
+      .populate('services', 'name')
       .sort({ createdAt: -1 })
       .limit(parseInt(limit));
 
+    console.log(`🔍 Found ${potentialAgents.length} potential agents`);
+
     const potentialProviders = potentialAgents.map(agent => {
+      // Get location from USER model (this is where it's actually stored)
+      let location = 'Location not specified';
+      if (agent.user?.location) {
+        location = agent.user.location;
+      } else if (agent.location) {
+        // Fallback to agent profile location
+        if (typeof agent.location === 'object') {
+          location = [
+            agent.location.city,
+            agent.location.state,
+            agent.location.country
+          ].filter(Boolean).join(', ') || 'Location not specified';
+        } else {
+          location = agent.location;
+        }
+      }
+
+      // Get phone from USER model
+      const phone = agent.user?.phone || 'Not provided';
+
+      // Determine what they applied for
+      let appliedFor = 'Service Provider';
+      if (agent.serviceType) {
+        appliedFor = agent.serviceType;
+      } else if (agent.services && agent.services.length > 0) {
+        appliedFor = agent.services.map(s => s.name).join(', ');
+      } else if (agent.servicesOffered) {
+        appliedFor = agent.servicesOffered;
+      }
+
+      // Get experience
+      let experience = 'Not specified';
+      if (agent.yearsOfExperience) {
+        experience = `${agent.yearsOfExperience} years`;
+      }
+
+      // Calculate profile completion percentage
+      const completion = calculateProfileCompletion(agent);
+
       return {
         id: agent._id,
+        applicantId: `APP${agent._id.toString().slice(-6).toUpperCase()}`,
         name: agent.user?.fullName || 'Applicant',
-        appliedFor: agent.serviceType || 'Service Provider',
-        experience: agent.experience || 'Not specified',
-        location: agent.location || agent.address || 'Location not specified',
-        phone: agent.user?.phone || 'Not provided',
+        appliedFor: appliedFor,
+        experience: experience,
+        location: location,
+        phone: phone,
         email: agent.user?.email || 'Not provided',
-        status: agent.verificationStatus || 'pending',
+        status: agent.verificationStatus || (agent.isVerified ? 'verified' : 'pending'),
         appliedDate: agent.createdAt,
-        notes: agent.verificationNotes
+        notes: agent.verificationNotes || '',
+        profileCompletion: completion.percentage,
+        profileStatus: completion.status,
+        hasDocuments: !!(agent.documents && agent.documents.length > 0),
+        rating: agent.rating || 0,
+        completedJobs: agent.completedJobs || 0,
+        // Additional contact info from user
+        userLocation: agent.user?.location || 'Not specified',
+        userPhone: agent.user?.phone || 'Not provided'
       };
     });
 
+    // Filter by search if provided
+    let filteredProviders = potentialProviders;
+    if (search) {
+      filteredProviders = potentialProviders.filter(provider => 
+        provider.name.toLowerCase().includes(search.toLowerCase()) ||
+        provider.appliedFor.toLowerCase().includes(search.toLowerCase()) ||
+        provider.email.toLowerCase().includes(search.toLowerCase()) ||
+        provider.location.toLowerCase().includes(search.toLowerCase())
+      );
+    }
+
     res.json({
       success: true,
-      potentialProviders,
-      total: potentialProviders.length
+      potentialProviders: filteredProviders,
+      total: filteredProviders.length,
+      statistics: {
+        total: potentialProviders.length,
+        pending: potentialProviders.filter(p => p.status === 'pending').length,
+        reviewing: potentialProviders.filter(p => p.status === 'reviewing').length,
+        waitlisted: potentialProviders.filter(p => p.status === 'waitlisted').length,
+        highCompletion: potentialProviders.filter(p => p.profileCompletion >= 80).length
+      },
+      message: `Found ${filteredProviders.length} potential service providers`
     });
   } catch (err) {
     console.error('Potential providers error:', err);
@@ -1009,6 +1140,93 @@ export const getPotentialProviders = async (req, res, next) => {
   }
 };
 
+// Helper function to calculate agent status
+const getAgentStatus = (agent) => {
+  if (!agent.isVerified) {
+    return agent.verificationStatus === 'pending' ? 'Pending' : 
+           agent.verificationStatus === 'rejected' ? 'Rejected' : 'Inactive';
+  }
+  
+  if (agent.availability === 'available') return 'Active';
+  if (agent.availability === 'unavailable') return 'Unavailable';
+  if (agent.availability === 'busy') return 'Busy';
+  
+  return 'Active';
+};
+
+// Helper function to calculate work rate
+const calculateWorkRate = (agent) => {
+  const completed = agent.completedJobs || 0;
+  const total = completed + (agent.currentWorkload || 0);
+  
+  if (total === 0) return '0%';
+  
+  const rate = (completed / total) * 100;
+  return `${Math.round(rate)}%`;
+};
+
+// Helper function to calculate profile completion
+const calculateProfileCompletion = (agent) => {
+  let completedFields = 0;
+  const totalFields = 7;
+  
+  // Check each important field
+  if (agent.user?.fullName) completedFields++;
+  if (agent.user?.phone) completedFields++;
+  if (agent.user?.location) completedFields++;
+  if (agent.serviceType || agent.services?.length > 0) completedFields++;
+  if (agent.yearsOfExperience) completedFields++;
+  if (agent.profileImage) completedFields++;
+  if (agent.documents?.length > 0) completedFields++;
+  
+  const percentage = Math.round((completedFields / totalFields) * 100);
+  
+  let status = 'Minimal';
+  if (percentage >= 80) status = 'Complete';
+  else if (percentage >= 60) status = 'Mostly Complete';
+  else if (percentage >= 40) status = 'Partially Complete';
+  else if (percentage >= 20) status = 'Basic';
+  
+  return { percentage, status };
+};
+
+// NEW: Debug method to check agent data structure
+export const debugAgentsData = async (req, res, next) => {
+  try {
+    console.log('🐛 ===== DEBUG AGENTS DATA =====');
+    
+    const agents = await AgentProfile.find({})
+      .populate('user', 'fullName email phone location')
+      .limit(5);
+    
+    console.log(`📊 Sample of ${agents.length} agents:`);
+    
+    agents.forEach((agent, index) => {
+      console.log(`\n👤 Agent ${index + 1}:`);
+      console.log('AgentProfile fields:');
+      console.log(`- serviceType: ${agent.serviceType}`);
+      console.log(`- yearsOfExperience: ${agent.yearsOfExperience}`);
+      console.log(`- location (agent): ${agent.location}`);
+      console.log(`- servicesOffered: ${agent.servicesOffered}`);
+      
+      console.log('User fields:');
+      console.log(`- user.fullName: ${agent.user?.fullName}`);
+      console.log(`- user.phone: ${agent.user?.phone}`);
+      console.log(`- user.location: ${agent.user?.location}`);
+      console.log(`- user.email: ${agent.user?.email}`);
+    });
+    
+    res.json({
+      success: true,
+      message: 'Check server console for debug information',
+      sampleSize: agents.length
+    });
+    
+  } catch (err) {
+    console.error('Debug error:', err);
+    next(err);
+  }
+};
 // Add to your adminController.js
 
 // GET /api/admins/support-employees
@@ -1163,15 +1381,6 @@ const getDepartmentFromRole = (role) => {
   return departmentMap[role] || 'General Department';
 };
 
-// Helper function to calculate work rate
-const calculateWorkRate = (agent) => {
-  if (!agent.totalOrders || agent.totalOrders === 0) return 0;
-  
-  const completedOrders = agent.completedOrders || 0;
-  const workRate = Math.round((completedOrders / agent.totalOrders) * 100);
-  
-  return Math.min(workRate, 100); // Cap at 100%
-};
 
 // Helper function to format delivery status
 const formatDeliveryStatus = (status) => {
