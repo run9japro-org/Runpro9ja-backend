@@ -27,13 +27,13 @@ const UserSchema = new mongoose.Schema(
       required: function() {
         return this.role === ROLES.AGENT || this.role === ROLES.CUSTOMER;
       },
-      validate: {
-        validator: function(dob) {
-          const age = Math.floor((new Date() - new Date(dob)) / (365.25 * 24 * 60 * 60 * 1000));
-          return age >= 18; // Must be at least 18 years old
-        },
-        message: 'User must be at least 18 years old'
-      }
+      // validate: {
+      //   validator: function(dob) {
+      //     const age = Math.floor((new Date() - new Date(dob)) / (365.25 * 24 * 60 * 60 * 1000));
+      //     return age >= 18; // Must be at least 18 years old
+      //   },
+      //   message: 'User must be at least 18 years old'
+      // }
     },
     
     password: { type: String, minlength: 6, required: true, select: false },
