@@ -62,7 +62,7 @@ export const createOrder = async (req, res) => {
       // For normal orders, if there's a requested agent, wait for their response
       // If no requested agent, make it public immediately
       if (requestedAgent) {
-        initialStatus = 'pending_agent_response';
+        initialStatus = 'requested';
         timelineNote = 'Direct offer sent to agent. Waiting for response.';
       } else {
         initialStatus = 'public';
