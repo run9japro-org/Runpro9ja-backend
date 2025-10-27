@@ -1,6 +1,6 @@
 import Order from '../models/Order.js';
 import { notifyUser } from '../services/notificationService.js';
-
+import { AgentProfile } from '../models/AgentProfile.js';
 // Step 1: Customer creates order with selected agent
 // In your orderController.js - UPDATED createOrder function
 
