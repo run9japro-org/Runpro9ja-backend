@@ -679,10 +679,27 @@ export const getCustomerOrders = async (req, res) => {
 // Get agent orders - FIXED
 export const getAgentOrders = async (req, res) => {
   try {
+    console.log('🔍 Fetching agent orders for:', req.user.id);
+    console.log('   - Agent user ID:', req.user.id);
+    
     const orders = await Order.find({ agent: req.user.id })
-      .populate('serviceCategory customer')
+      .populate('serviceCategory', 'name description')
+      .populate('customer', 'fullName email phone')
       .populate('requestedAgent', 'fullName')
       .sort({ createdAt: -1 });
+
+    console.log(`✅ Found ${orders.length} orders for agent ${req.user.id}`);
+    
+    // Debug: Log each order found
+    orders.forEach((order, index) => {
+      console.log(`📦 Agent Order ${index + 1}:`, {
+        orderId: order._id,
+        agent: order.agent,
+        status: order.status,
+        serviceCategory: order.serviceCategory?.name,
+        customer: order.customer?.fullName
+      });
+    });
     
     res.json({
       success: true,
@@ -690,13 +707,13 @@ export const getAgentOrders = async (req, res) => {
       count: orders.length
     });
   } catch (err) {
+    console.error('Error getting agent orders:', err);
     res.status(500).json({ 
       success: false,
       error: err.message 
     });
   }
 };
-
 
 
 export const updateStatus = async (req, res) => {
