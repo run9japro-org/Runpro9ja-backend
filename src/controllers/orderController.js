@@ -235,11 +235,10 @@ export const acceptOrder = async (req, res) => {
       orderType: order.orderType
     });
 
-    // Handle undefined status - set a default
-    if (!order.status || order.status === 'undefined') {
+    // **FIXED: Better status handling**
+    if (!order.status || order.status === 'undefined' || order.status === undefined) {
       console.log('⚠️ Order has undefined status, setting to requested');
       order.status = 'requested';
-      await order.save();
     }
 
     // Check if this agent was the one requested
@@ -254,7 +253,7 @@ export const acceptOrder = async (req, res) => {
       });
     }
 
-    // Check if order is still waiting for response - FIXED: Handle both statuses
+    // Check if order is still waiting for response
     const validStatuses = ['pending_agent_response', 'requested'];
     if (!validStatuses.includes(order.status)) {
       return res.status(400).json({
@@ -263,15 +262,26 @@ export const acceptOrder = async (req, res) => {
       });
     }
 
-    // Update order - agent accepted!
+    // **FIXED: Update order - agent accepted!**
+    console.log('✅ Assigning agent to order and updating status to "accepted"');
+    
     order.status = 'accepted';
     order.agent = req.user.id;
     order.timeline.push({ 
       status: 'accepted', 
-      note: `Agent ${req.user.fullName} accepted the direct offer` 
+      note: `Agent ${req.user.fullName} accepted the direct offer`,
+      timestamp: new Date()
     });
     
-    await order.save();
+    // **FIXED: Use { new: true } to get the updated document**
+    const savedOrder = await order.save();
+    
+    console.log('📋 ORDER AFTER SAVE:', {
+      orderId: savedOrder._id,
+      agent: savedOrder.agent,
+      status: savedOrder.status,
+      agentType: typeof savedOrder.agent
+    });
 
     console.log(`✅ Order ${order._id} accepted by agent ${req.user.id}`);
 
@@ -294,7 +304,7 @@ export const acceptOrder = async (req, res) => {
     res.json({
       success: true,
       message: 'Order accepted successfully. Proceed to payment.',
-      order,
+      order: savedOrder,
       nextStep: 'payment'
     });
   } catch (err) {
@@ -305,7 +315,6 @@ export const acceptOrder = async (req, res) => {
     });
   }
 };
-
 // DEBUG: Method to check order data and agent relationships
 export const debugOrderAgentRelationships = async (req, res) => {
   try {
@@ -677,6 +686,7 @@ export const getCustomerOrders = async (req, res) => {
 };
 
 // Get agent orders - FIXED
+// Get agent orders - FIXED VERSION
 export const getAgentOrders = async (req, res) => {
   try {
     console.log('🔍 Fetching agent orders for:', req.user.id);
@@ -690,8 +700,18 @@ export const getAgentOrders = async (req, res) => {
 
     console.log(`✅ Found ${orders.length} orders for agent ${req.user.id}`);
     
+    // **FIXED: Handle undefined status in the response**
+    const ordersWithFixedStatus = orders.map(order => {
+      // If status is undefined, set it to 'accepted'
+      if (!order.status || order.status === 'undefined') {
+        console.log(`⚠️ Fixing undefined status for order ${order._id}, setting to 'accepted'`);
+        order.status = 'accepted';
+      }
+      return order;
+    });
+
     // Debug: Log each order found
-    orders.forEach((order, index) => {
+    ordersWithFixedStatus.forEach((order, index) => {
       console.log(`📦 Agent Order ${index + 1}:`, {
         orderId: order._id,
         agent: order.agent,
@@ -703,8 +723,8 @@ export const getAgentOrders = async (req, res) => {
     
     res.json({
       success: true,
-      orders,
-      count: orders.length
+      orders: ordersWithFixedStatus,
+      count: ordersWithFixedStatus.length
     });
   } catch (err) {
     console.error('Error getting agent orders:', err);
@@ -714,7 +734,6 @@ export const getAgentOrders = async (req, res) => {
     });
   }
 };
-
 
 export const updateStatus = async (req, res) => {
   try {

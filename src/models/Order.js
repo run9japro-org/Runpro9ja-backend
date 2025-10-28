@@ -1,4 +1,4 @@
-// models/Order.js - UPDATED VERSION
+// models/Order.js - FIXED VERSION
 import mongoose from 'mongoose';
 
 // In models/Order.js - update the status enum
@@ -36,6 +36,26 @@ const orderSchema = new mongoose.Schema({
   pickupLocation: { type: String },
   destinationLocation: { type: String },
 
+  status: {
+    type: String,
+    enum: [
+      'pending_agent_response',
+      'requested', 
+      'inspection_scheduled', 
+      'inspection_completed',
+      'quotation_provided', 
+      'quotation_accepted',
+      'agent_selected',
+      'accepted', 
+      'rejected', 
+      'in-progress', 
+      'completed', 
+      'cancelled',
+      'public' // Add this if you use public status
+    ],
+    default: 'requested', // Add default value
+    required: true
+  },
   
   // NEW: Service Scale Field
   serviceScale: {
