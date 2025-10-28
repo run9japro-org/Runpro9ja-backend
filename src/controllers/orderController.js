@@ -171,13 +171,14 @@ export const createOrder = async (req, res) => {
 };
 
 // Get orders specifically offered to an agent - FIXED VERSION
+// Get orders specifically offered to an agent - FIXED VERSION
 export const getDirectOffers = async (req, res) => {
   try {
     console.log('🔍 Fetching direct offers for agent:', req.user.id);
     
     const orders = await Order.find({
-      requestedAgent: req.user.id, // This should match the agent's user ID
-      status: 'requested',
+      requestedAgent: req.user.id,
+      status: { $in: ['pending_agent_response', 'requested'] }, // ← FIXED: Check both statuses
       agent: { $exists: false } // No agent assigned yet
     })
       .populate('customer', 'fullName email phone location')
@@ -212,6 +213,7 @@ export const getDirectOffers = async (req, res) => {
 };
 
 // Step 2: Agent accepts the direct offer - FIXED VERSION
+// Step 2: Agent accepts the direct offer - FIXED VERSION
 export const acceptOrder = async (req, res) => {
   try {
     const order = await Order.findById(req.params.id)
@@ -233,7 +235,14 @@ export const acceptOrder = async (req, res) => {
       orderType: order.orderType
     });
 
-    // Check if this agent was the one requested - FIXED: Compare user IDs properly
+    // Handle undefined status - set a default
+    if (!order.status || order.status === 'undefined') {
+      console.log('⚠️ Order has undefined status, setting to requested');
+      order.status = 'requested';
+      await order.save();
+    }
+
+    // Check if this agent was the one requested
     if (!order.requestedAgent || order.requestedAgent._id.toString() !== req.user.id.toString()) {
       console.log('❌ Agent mismatch:', {
         requestedAgent: order.requestedAgent?._id,
@@ -382,6 +391,7 @@ export const getAgentAcceptedOrders = async (req, res) => {
 // Step 2: Agent accepts the direct offer - FIXED
 
 // Step 3: Agent rejects the direct offer - FIXED
+// Step 3: Agent rejects the direct offer - FIXED VERSION
 export const rejectOrder = async (req, res) => {
   try {
     const { reason } = req.body;
@@ -403,11 +413,27 @@ export const rejectOrder = async (req, res) => {
       currentUser: req.user.id
     });
 
+    // Handle undefined status - set a default
+    if (!order.status || order.status === 'undefined') {
+      console.log('⚠️ Order has undefined status, setting to requested');
+      order.status = 'requested';
+      await order.save();
+    }
+
     // Check if this agent was the one requested
-    if (!order.requestedAgent || order.requestedAgent._id.toString() !== req.user.id) {
+    if (!order.requestedAgent || order.requestedAgent._id.toString() !== req.user.id.toString()) {
       return res.status(403).json({
         success: false,
         error: 'This order was not offered to you'
+      });
+    }
+
+    // FIXED: Check if order is still available for rejection (same statuses as acceptance)
+    const validStatuses = ['pending_agent_response', 'requested'];
+    if (!validStatuses.includes(order.status)) {
+      return res.status(400).json({
+        success: false,
+        error: `Order is no longer available for rejection. Current status: ${order.status}`
       });
     }
 
@@ -423,10 +449,12 @@ export const rejectOrder = async (req, res) => {
     
     order.timeline.push({ 
       status: 'public', 
-      note: `Requested agent declined. Order now public for all agents.` 
+      note: `Requested agent declined. Order now public for all agents.${reason ? ` Reason: ${reason}` : ''}` 
     });
     
     await order.save();
+
+    console.log(`✅ Order ${order._id} rejected by agent ${req.user.id}`);
 
     // ✅ Notify customer that agent declined
     await notifyUser(
@@ -442,7 +470,7 @@ export const rejectOrder = async (req, res) => {
         type: 'PUBLIC_ORDER_AVAILABLE',
         data: {
           orderId: order._id,
-          serviceType: order.serviceType,
+          serviceCategory: order.serviceCategory?.name,
           customerName: order.customer.fullName,
           pickup: order.pickup,
           destination: order.destination,
