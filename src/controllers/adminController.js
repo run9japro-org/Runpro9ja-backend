@@ -842,78 +842,109 @@ export const getDeliveryDetails = async (req, res, next) => {
       return res.status(403).json({ message: "Forbidden" });
     }
 
-    const { limit = 20 } = req.query;
+    const { limit = 20, page = 1 } = req.query;
+    const skip = (page - 1) * limit;
 
-    // 🧾 Fetch delivery-related orders
+    // 🧾 SPECIFIC query for delivery-related orders only
     const deliveryOrders = await Order.find({
       $or: [
-        { "serviceCategory.name": { $regex: /delivery|errand|pickup|dispatch/i } },
-        { pickupLocation: { $exists: true, $ne: "" } },
-        { destinationLocation: { $exists: true, $ne: "" } },
-        { deliveryUpdates: { $exists: true, $not: { $size: 0 } } },
-      ],
+        // Match by service category name
+        { 'serviceCategory.name': { $regex: /delivery|grocery|movers/i } },
+        // Or match by service type if it exists in your model
+        { serviceType: { $regex: /delivery|grocery|movers/i } },
+        // Or orders that have pickup & destination locations (delivery characteristics)
+        { 
+          $and: [
+            { pickupLocation: { $exists: true, $ne: "" } },
+            { destinationLocation: { $exists: true, $ne: "" } }
+          ]
+        }
+      ]
     })
       .populate("customer", "fullName email phone")
       .populate("agent", "fullName email phone")
       .populate("requestedAgent", "fullName email phone")
-      .populate("serviceCategory", "name")
+      .populate("serviceCategory", "name description")
       .sort({ createdAt: -1 })
-      .limit(parseInt(limit));
+      .skip(skip)
+      .limit(parseInt(limit))
+      .lean();
+
+    const total = await Order.countDocuments({
+      $or: [
+        { 'serviceCategory.name': { $regex: /delivery|grocery|movers/i } },
+        { serviceType: { $regex: /delivery|grocery|movers/i } },
+        { 
+          $and: [
+            { pickupLocation: { $exists: true, $ne: "" } },
+            { destinationLocation: { $exists: true, $ne: "" } }
+          ]
+        }
+      ]
+    });
+
+    console.log(`📦 Found ${deliveryOrders.length} delivery orders out of ${total} total`);
 
     // 🧩 Format orders into delivery details
     const deliveryDetails = deliveryOrders.map((order) => {
-      const serviceType = order.serviceCategory?.name || "Delivery Service";
-
-      // Latest known status
-      let latestStatus =
-        order.timeline && order.timeline.length > 0
-          ? order.timeline[order.timeline.length - 1].status
-          : "requested";
-
-      // 🧠 Automatically mark as agent_selected if agent exists but timeline doesn’t say so
-      if (order.agent && latestStatus === "requested") {
-        latestStatus = "agent_selected";
+      const serviceCategoryName = order.serviceCategory?.name || "Delivery Service";
+      
+      // Determine delivery type based on service category
+      let deliveryType = "Delivery Service";
+      if (serviceCategoryName.toLowerCase().includes('grocery')) {
+        deliveryType = "Grocery Delivery";
+      } else if (serviceCategoryName.toLowerCase().includes('movers')) {
+        deliveryType = "Moving Service";
+      } else if (serviceCategoryName.toLowerCase().includes('delivery')) {
+        deliveryType = "Package Delivery";
       }
 
-      // 🧍‍♂️ Rider (agent) logic
-      const riderInCharge =
-        order.agent?.fullName ||
-        order.requestedAgent?.fullName ||
-        "Not assigned";
+      // Use current status from order
+      const currentStatus = order.status || "requested";
 
-      // 🚚 Pickup and Destination
-      const pickup = order.pickupLocation || "Not specified";
-      const destination = order.destinationLocation || order.location || "Not specified";
+      // 🧍‍♂️ Rider (agent) logic
+      const riderInCharge = order.agent?.fullName || order.requestedAgent?.fullName || "Not assigned";
+
+      // 🚚 Pickup and Destination - combine into one field for frontend
+      const pickup = order.pickupLocation || "Location not specified";
+      const destination = order.destinationLocation || "Destination not specified";
+      const pickupDestination = `From: ${pickup} To: ${destination}`;
+
+      // Format date
+      const formattedDate = order.scheduledDate 
+        ? new Date(order.scheduledDate).toLocaleDateString("en-GB")
+        : order.createdAt
+        ? new Date(order.createdAt).toLocaleDateString("en-GB")
+        : new Date().toLocaleDateString("en-GB");
+
+      // Estimate time based on service type
+      let estimatedTime = "2 Hours"; // Default
+      if (serviceCategoryName.toLowerCase().includes('movers')) {
+        estimatedTime = "4 Hours";
+      } else if (serviceCategoryName.toLowerCase().includes('grocery')) {
+        estimatedTime = "1.5 Hours";
+      }
 
       return {
-        orderId: `RP-${order._id.toString().slice(-3)}`,
-        deliveryType:
-          serviceType.length > 15
-            ? serviceType.substring(0, 15) + "..."
-            : serviceType,
-        pickup, // ✅ From location
-        destination, // ✅ To location
-        date: order.scheduledDate
-          ? new Date(order.scheduledDate).toLocaleDateString("en-GB")
-          : order.createdAt
-          ? new Date(order.createdAt).toLocaleDateString("en-GB")
-          : "N/A",
-        estimatedTime: order.estimatedDuration
-          ? `${Math.ceil(order.estimatedDuration / 60)} Hours`
-          : "2 Hours",
-        riderInCharge,
+        orderId: order._id ? `RP-${order._id.toString().slice(-4)}` : `RP-${Math.random().toString(36).substr(2, 4)}`,
+        deliveryType: deliveryType,
+        pickupDestination: pickupDestination,
+        date: formattedDate,
+        estimatedTime: estimatedTime,
+        riderInCharge: riderInCharge,
         orderBy: order.customer?.fullName || "Unknown Customer",
-        deliveredTo: order.customer?.fullName || "Unknown Customer",
-        status: latestStatus,
-        originalOrder: order,
+        deliveredTo: order.customer?.fullName || "Unknown Customer", // Usually same as orderBy for deliveries
+        status: currentStatus,
+        originalOrder: order, // Keep original for details
       };
     });
 
-    // 🧪 If no delivery orders found
+    // 🧪 If no delivery orders found, return empty array
     if (deliveryDetails.length === 0) {
+      console.log("No delivery orders found in database");
       return res.json({
         success: true,
-        deliveryDetails: getSampleDeliveryDetails(),
+        deliveryDetails: [],
         total: 0,
         message: "No delivery orders found",
       });
@@ -923,18 +954,63 @@ export const getDeliveryDetails = async (req, res, next) => {
     res.json({
       success: true,
       deliveryDetails,
-      total: deliveryDetails.length,
+      pagination: {
+        current: parseInt(page),
+        pages: Math.ceil(total / limit),
+        total
+      }
     });
-  } catch (err) {
-    console.error("Delivery details error:", err);
 
-    // 🧯 Return sample data on error
-    res.json({
-      success: true,
-      deliveryDetails: getSampleDeliveryDetails(),
+  } catch (err) {
+    console.error("❌ Delivery details error:", err);
+    
+    // Return empty array on error instead of sample data
+    res.status(500).json({
+      success: false,
+      deliveryDetails: [],
       total: 0,
+      message: "Error fetching delivery details"
     });
   }
+};
+
+// Sample data fallback (keep this for frontend fallback)
+const getSampleDeliveryDetails = () => {
+  return [
+    {
+      orderId: "RP-267",
+      deliveryType: "Grocery Delivery",
+      pickupDestination: "From: Jeobel, Atakuko To: Quanna Micaline, Lekki Teligate",
+      date: "09/10/25",
+      estimatedTime: "1.5 Hours",
+      riderInCharge: "Samuel Biyomi",
+      orderBy: "Mariam Hassan",
+      deliveredTo: "Mariam Hassan",
+      status: "in-progress"
+    },
+    {
+      orderId: "RP-268",
+      deliveryType: "Moving Service", 
+      pickupDestination: "From: 23. Sukenu Qie Road Casso To: Quanna Micaline, Lekki Teligate",
+      date: "09/10/25",
+      estimatedTime: "4 Hours",
+      riderInCharge: "Samuel Biyomi",
+      orderBy: "Mariam Hassan",
+      deliveredTo: "Chakouma Berry",
+      status: "completed"
+    },
+    {
+      orderId: "RP-269",
+      deliveryType: "Package Delivery",
+      pickupDestination: "From: Victoria Island To: Ikeja GRA",
+      date: "10/10/25",
+      estimatedTime: "2 Hours",
+      riderInCharge: "Not assigned",
+      orderBy: "Adejabola Ayomide",
+      deliveredTo: "Adejabola Ayomide",
+      status: "pending"
+    }
+  ];
 };
 
 // Add to your adminController.js
@@ -1534,30 +1610,6 @@ const getSampleServiceRequests = () => {
   ];
 };
 
-const getSampleDeliveryDetails = () => {
-  return [
-    {
-      orderId: "RP-267",
-      deliveryType: "Errand service",
-      pickupDestination: "From: Jeobel, Atakuko To: Quanna Micaline, Lekki Teligate",
-      date: "09/10/25",
-      estimatedTime: "2 Hours",
-      riderInCharge: "Samuel Biyomi",
-      orderBy: "Mariam Hassan",
-      deliveredTo: "Mariam Hassan",
-    },
-    {
-      orderId: "RP-268",
-      deliveryType: "Dispatch delivery",
-      pickupDestination: "From: 23. Sukenu Qie Road Casso To: Quanna Micaline, Lekki Teligate",
-      date: "09/10/25",
-      estimatedTime: "2 Hours",
-      riderInCharge: "Samuel Biyomi",
-      orderBy: "Mariam Hassan",
-      deliveredTo: "Chakouma Berry",
-    },
-  ];
-};
 // ==================== PAYMENT MANAGEMENT ====================
 
 // GET /api/admins/payments -> SUPER_ADMIN, ADMIN_HEAD
