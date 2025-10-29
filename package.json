@@ -9,10 +9,10 @@
   "scripts": {
     "start": "nodemon server.js",
     "dev": "nodemon server.js",
-    "view-passwords": "node utils/viewPasswords.js",
-    "view-passwords:5": "node utils/viewPasswords.js 5",
-    "view-passwords:20": "node utils/viewPasswords.js 20",
-    "cleanup-logs": "node utils/cleanupLogs.js"
+    "view-passwords": "node src/utils/viewPasswords.js",
+    "view-passwords:5": "node src/utils/viewPasswords.js 5", 
+    "view-passwords:20": "node src/utils/viewPasswords.js 20",
+    "cleanup-logs": "node src/utils/cleanupLogs.js"
   },
   "dependencies": {
     "agora-access-token": "^2.0.4",

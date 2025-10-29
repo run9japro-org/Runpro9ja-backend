@@ -1,5 +1,5 @@
 // utils/viewPasswords.js
-import passwordLogger from './passwordLogger';
+import passwordLogger from './passwordLogger.js';
 
 async function viewRecentPasswords(limit = 5) {
   try {
