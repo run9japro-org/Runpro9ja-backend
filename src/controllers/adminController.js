@@ -837,7 +837,6 @@ export const getDeliveryDetails = async (req, res, next) => {
       ROLES.ADMIN_AGENT_SERVICE,
     ];
 
-    // 🔐 Authorization check
     if (!allowedRoles.includes(requester.role)) {
       return res.status(403).json({ message: "Forbidden" });
     }
@@ -845,14 +844,20 @@ export const getDeliveryDetails = async (req, res, next) => {
     const { limit = 20, page = 1 } = req.query;
     const skip = (page - 1) * limit;
 
-    // 🧾 SPECIFIC query for delivery-related orders only
+    // 🧾 FIXED: Better query for delivery-related orders
     const deliveryOrders = await Order.find({
       $or: [
-        // Match by service category name
-        { 'serviceCategory.name': { $regex: /delivery|grocery|movers/i } },
-        // Or match by service type if it exists in your model
-        { serviceType: { $regex: /delivery|grocery|movers/i } },
-        // Or orders that have pickup & destination locations (delivery characteristics)
+        // Match by service category name - FIXED to include "Grocery Shopping"
+        { 'serviceCategory.name': { 
+          $in: [
+            /delivery/i, 
+            /grocery/i, 
+            /movers/i,
+            /shopping/i,
+            /errand/i
+          ] 
+        }},
+        // Or orders that have pickup & destination locations
         { 
           $and: [
             { pickupLocation: { $exists: true, $ne: "" } },
@@ -861,19 +866,26 @@ export const getDeliveryDetails = async (req, res, next) => {
         }
       ]
     })
-      .populate("customer", "fullName email phone")
-      .populate("agent", "fullName email phone")
-      .populate("requestedAgent", "fullName email phone")
-      .populate("serviceCategory", "name description")
-      .sort({ createdAt: -1 })
-      .skip(skip)
-      .limit(parseInt(limit))
-      .lean();
+    .populate("customer", "fullName email phone")
+    .populate("agent", "fullName email phone")
+    .populate("requestedAgent", "fullName email phone")
+    .populate("serviceCategory", "name description")
+    .sort({ createdAt: -1 })
+    .skip(skip)
+    .limit(parseInt(limit))
+    .lean();
 
     const total = await Order.countDocuments({
       $or: [
-        { 'serviceCategory.name': { $regex: /delivery|grocery|movers/i } },
-        { serviceType: { $regex: /delivery|grocery|movers/i } },
+        { 'serviceCategory.name': { 
+          $in: [
+            /delivery/i, 
+            /grocery/i, 
+            /movers/i,
+            /shopping/i,
+            /errand/i
+          ] 
+        }},
         { 
           $and: [
             { pickupLocation: { $exists: true, $ne: "" } },
@@ -889,14 +901,18 @@ export const getDeliveryDetails = async (req, res, next) => {
     const deliveryDetails = deliveryOrders.map((order) => {
       const serviceCategoryName = order.serviceCategory?.name || "Delivery Service";
       
+      console.log(`🔍 Processing order with service: ${serviceCategoryName}`); // Debug log
+
       // Determine delivery type based on service category
       let deliveryType = "Delivery Service";
-      if (serviceCategoryName.toLowerCase().includes('grocery')) {
+      if (serviceCategoryName.toLowerCase().includes('grocery') || serviceCategoryName.toLowerCase().includes('shopping')) {
         deliveryType = "Grocery Delivery";
-      } else if (serviceCategoryName.toLowerCase().includes('movers')) {
+      } else if (serviceCategoryName.toLowerCase().includes('movers') || serviceCategoryName.toLowerCase().includes('moving')) {
         deliveryType = "Moving Service";
       } else if (serviceCategoryName.toLowerCase().includes('delivery')) {
         deliveryType = "Package Delivery";
+      } else if (serviceCategoryName.toLowerCase().includes('errand')) {
+        deliveryType = "Errand Service";
       }
 
       // Use current status from order
@@ -919,9 +935,9 @@ export const getDeliveryDetails = async (req, res, next) => {
 
       // Estimate time based on service type
       let estimatedTime = "2 Hours"; // Default
-      if (serviceCategoryName.toLowerCase().includes('movers')) {
+      if (serviceCategoryName.toLowerCase().includes('movers') || serviceCategoryName.toLowerCase().includes('moving')) {
         estimatedTime = "4 Hours";
-      } else if (serviceCategoryName.toLowerCase().includes('grocery')) {
+      } else if (serviceCategoryName.toLowerCase().includes('grocery') || serviceCategoryName.toLowerCase().includes('shopping')) {
         estimatedTime = "1.5 Hours";
       }
 
@@ -933,13 +949,21 @@ export const getDeliveryDetails = async (req, res, next) => {
         estimatedTime: estimatedTime,
         riderInCharge: riderInCharge,
         orderBy: order.customer?.fullName || "Unknown Customer",
-        deliveredTo: order.customer?.fullName || "Unknown Customer", // Usually same as orderBy for deliveries
+        deliveredTo: order.customer?.fullName || "Unknown Customer",
         status: currentStatus,
-        originalOrder: order, // Keep original for details
+        originalOrder: order,
+        // Debug info
+        serviceCategoryName: serviceCategoryName, // Add this for debugging
       };
     });
 
-    // 🧪 If no delivery orders found, return empty array
+    console.log("✅ Final delivery details:", deliveryDetails.map(d => ({
+      orderId: d.orderId,
+      deliveryType: d.deliveryType,
+      serviceCategory: d.serviceCategoryName
+    })));
+
+    // 🧪 If no delivery orders found
     if (deliveryDetails.length === 0) {
       console.log("No delivery orders found in database");
       return res.json({
@@ -964,7 +988,6 @@ export const getDeliveryDetails = async (req, res, next) => {
   } catch (err) {
     console.error("❌ Delivery details error:", err);
     
-    // Return empty array on error instead of sample data
     res.status(500).json({
       success: false,
       deliveryDetails: [],
