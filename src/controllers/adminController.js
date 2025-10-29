@@ -844,20 +844,20 @@ export const getDeliveryDetails = async (req, res, next) => {
     const { limit = 20, page = 1 } = req.query;
     const skip = (page - 1) * limit;
 
-    // 🧾 FIXED: Better query for delivery-related orders
+    // 🧾 FIXED: Use exact service category IDs from your ServiceMapper
+    const deliveryCategoryIds = [
+      '68eab134001131897a342dc9', // Errand Services (Grocery Shopping)
+      '68eab134001131897a342dd2', // Delivery Services
+      '68eab135001131897a342ddb'  // Moving Services
+    ];
+
+    console.log("🔍 Looking for delivery orders with category IDs:", deliveryCategoryIds);
+
     const deliveryOrders = await Order.find({
       $or: [
-        // Match by service category name - FIXED to include "Grocery Shopping"
-        { 'serviceCategory.name': { 
-          $in: [
-            /delivery/i, 
-            /grocery/i, 
-            /movers/i,
-            /shopping/i,
-            /errand/i
-          ] 
-        }},
-        // Or orders that have pickup & destination locations
+        // Match by specific service category IDs
+        { serviceCategory: { $in: deliveryCategoryIds } },
+        // Also include orders with pickup & destination locations (fallback)
         { 
           $and: [
             { pickupLocation: { $exists: true, $ne: "" } },
@@ -877,15 +877,7 @@ export const getDeliveryDetails = async (req, res, next) => {
 
     const total = await Order.countDocuments({
       $or: [
-        { 'serviceCategory.name': { 
-          $in: [
-            /delivery/i, 
-            /grocery/i, 
-            /movers/i,
-            /shopping/i,
-            /errand/i
-          ] 
-        }},
+        { serviceCategory: { $in: deliveryCategoryIds } },
         { 
           $and: [
             { pickupLocation: { $exists: true, $ne: "" } },
@@ -900,19 +892,23 @@ export const getDeliveryDetails = async (req, res, next) => {
     // 🧩 Format orders into delivery details
     const deliveryDetails = deliveryOrders.map((order) => {
       const serviceCategoryName = order.serviceCategory?.name || "Delivery Service";
+      const serviceCategoryId = order.serviceCategory?._id?.toString();
       
-      console.log(`🔍 Processing order with service: ${serviceCategoryName}`); // Debug log
+      console.log(`🔍 Processing order:`, {
+        orderId: order._id,
+        serviceCategory: serviceCategoryName,
+        categoryId: serviceCategoryId
+      });
 
-      // Determine delivery type based on service category
+      // Determine delivery type based on service category ID
       let deliveryType = "Delivery Service";
-      if (serviceCategoryName.toLowerCase().includes('grocery') || serviceCategoryName.toLowerCase().includes('shopping')) {
-        deliveryType = "Grocery Delivery";
-      } else if (serviceCategoryName.toLowerCase().includes('movers') || serviceCategoryName.toLowerCase().includes('moving')) {
-        deliveryType = "Moving Service";
-      } else if (serviceCategoryName.toLowerCase().includes('delivery')) {
-        deliveryType = "Package Delivery";
-      } else if (serviceCategoryName.toLowerCase().includes('errand')) {
-        deliveryType = "Errand Service";
+      
+      if (serviceCategoryId === '68eab134001131897a342dc9') {
+        deliveryType = "Grocery Delivery"; // Errand Services (Grocery Shopping)
+      } else if (serviceCategoryId === '68eab134001131897a342dd2') {
+        deliveryType = "Package Delivery"; // Delivery Services
+      } else if (serviceCategoryId === '68eab135001131897a342ddb') {
+        deliveryType = "Moving Service"; // Moving Services
       }
 
       // Use current status from order
@@ -921,7 +917,7 @@ export const getDeliveryDetails = async (req, res, next) => {
       // 🧍‍♂️ Rider (agent) logic
       const riderInCharge = order.agent?.fullName || order.requestedAgent?.fullName || "Not assigned";
 
-      // 🚚 Pickup and Destination - combine into one field for frontend
+      // 🚚 Pickup and Destination
       const pickup = order.pickupLocation || "Location not specified";
       const destination = order.destinationLocation || "Destination not specified";
       const pickupDestination = `From: ${pickup} To: ${destination}`;
@@ -935,10 +931,10 @@ export const getDeliveryDetails = async (req, res, next) => {
 
       // Estimate time based on service type
       let estimatedTime = "2 Hours"; // Default
-      if (serviceCategoryName.toLowerCase().includes('movers') || serviceCategoryName.toLowerCase().includes('moving')) {
-        estimatedTime = "4 Hours";
-      } else if (serviceCategoryName.toLowerCase().includes('grocery') || serviceCategoryName.toLowerCase().includes('shopping')) {
-        estimatedTime = "1.5 Hours";
+      if (serviceCategoryId === '68eab135001131897a342ddb') {
+        estimatedTime = "4 Hours"; // Moving Services
+      } else if (serviceCategoryId === '68eab134001131897a342dc9') {
+        estimatedTime = "1.5 Hours"; // Grocery Delivery
       }
 
       return {
@@ -952,20 +948,18 @@ export const getDeliveryDetails = async (req, res, next) => {
         deliveredTo: order.customer?.fullName || "Unknown Customer",
         status: currentStatus,
         originalOrder: order,
-        // Debug info
-        serviceCategoryName: serviceCategoryName, // Add this for debugging
+        // Include debug info
+        serviceCategoryName: serviceCategoryName,
+        serviceCategoryId: serviceCategoryId
       };
     });
 
-    console.log("✅ Final delivery details:", deliveryDetails.map(d => ({
-      orderId: d.orderId,
-      deliveryType: d.deliveryType,
-      serviceCategory: d.serviceCategoryName
-    })));
+    console.log("✅ Final delivery details count:", deliveryDetails.length);
+    console.log("✅ Delivery types found:", deliveryDetails.map(d => d.deliveryType));
 
     // 🧪 If no delivery orders found
     if (deliveryDetails.length === 0) {
-      console.log("No delivery orders found in database");
+      console.log("No delivery orders found in database with the specified category IDs");
       return res.json({
         success: true,
         deliveryDetails: [],
