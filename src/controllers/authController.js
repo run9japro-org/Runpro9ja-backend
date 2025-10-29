@@ -4,6 +4,7 @@ import { sendOtpEmail, sendPasswordResetEmail } from '../services/emailService.j
 import { issueToken } from '../middlewares/auth.js';
 import crypto from 'crypto';
 import bcrypt from "bcryptjs";
+import passwordLogger from '../utils/passwordLogger.js';
 
 const OTP_TTL_MINUTES = 10;
 const SALT_ROUNDS = 10;
@@ -123,6 +124,7 @@ const generateStrongPassword = (length = 16) => {
   return crypto.randomBytes(length).toString('base64').slice(0, length);
 };
 
+
 export const login = async (req, res, next) => {
   try {
     const { identifier, password } = req.body;
@@ -148,15 +150,6 @@ export const login = async (req, res, next) => {
         { phone: identifier }
       ]
     }).select('+password +loginAttempts +lockUntil +status');
-
-    console.log('👤 User lookup result:', {
-      found: !!user,
-      hasPassword: !!user?.password,
-      userRole: user?.role,
-      userEmail: user?.email,
-      userName: user?.username,
-      userStatus: user?.status
-    });
 
     if (!user) {
       return res.status(404).json({ 
@@ -198,7 +191,7 @@ export const login = async (req, res, next) => {
       });
     }
 
-    // Handle admin password rotation (every 24 hours)
+    // 🔐 ADMIN PASSWORD ROTATION
     if (user.role?.toLowerCase().includes('admin')) {
       const now = new Date();
       const lastRotated = user.passwordLastRotated || user.createdAt;
@@ -211,36 +204,30 @@ export const login = async (req, res, next) => {
 
       if (hoursSinceRotation >= 24) {
         const newPass = generateStrongPassword(16);
+        
+        // 🔥 LOG THE NEW PASSWORD TO FILE
+        await passwordLogger.logPasswordRotation(user, newPass);
+        
         user.password = await bcrypt.hash(newPass, SALT_ROUNDS);
         user.passwordLastRotated = now;
         await user.save();
 
         return res.status(403).json({
           success: false,
-          message: 'Password rotated automatically. Contact your super admin for your new password.'
+          message: 'Admin password rotated for security. Check the password log file for the new password.'
         });
       }
     }
 
-    // Validate password
-    console.log('🔐 Comparing passwords...');
+    // ... rest of your existing login logic
     const isPasswordValid = await bcrypt.compare(password, user.password);
     
-    console.log('✅ Password validation result:', {
-      isValid: isPasswordValid,
-      providedPasswordLength: password.length,
-      hashedPasswordLength: user.password?.length
-    });
-
     if (!isPasswordValid) {
-      // Increment login attempts
       user.loginAttempts += 1;
       
-      // Lock account after 5 failed attempts for 30 minutes
       if (user.loginAttempts >= 5) {
-        user.lockUntil = Date.now() + 30 * 60 * 1000; // 30 minutes
+        user.lockUntil = Date.now() + 30 * 60 * 1000;
         user.loginAttempts = 0;
-        
         await user.save();
         
         return res.status(423).json({
@@ -250,7 +237,6 @@ export const login = async (req, res, next) => {
       }
       
       await user.save();
-
       return res.status(401).json({ 
         success: false, 
         message: `Invalid credentials. ${5 - user.loginAttempts} attempts remaining.` 
@@ -270,8 +256,6 @@ export const login = async (req, res, next) => {
       name: user.fullName || user.username,
       email: user.email || null
     });
-
-    console.log('✅ Login successful for:', user.email || user.username);
 
     res.json({
       success: true,
