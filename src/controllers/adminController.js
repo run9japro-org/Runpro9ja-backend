@@ -386,31 +386,123 @@ export const getAllServiceRequests = async (req, res, next) => {
   try {
     const requester = req.user;
     const allowedRoles = [ROLES.SUPER_ADMIN, ROLES.ADMIN_HEAD, ROLES.ADMIN_AGENT_SERVICE, ROLES.ADMIN_CUSTOMER_SERVICE];
+    
     if (!allowedRoles.includes(requester.role)) {
       return res.status(403).json({ message: 'Forbidden' });
     }
 
-    const { page = 1, limit = 20, status, serviceType, dateFrom, dateTo } = req.query;
+    const { 
+      page = 1, 
+      limit = 20, 
+      status, 
+      serviceCategory,
+      serviceScale,
+      orderType,
+      dateFrom, 
+      dateTo,
+      search 
+    } = req.query;
+    
     const skip = (page - 1) * limit;
 
-    let query = {};
-    if (status) query.status = status;
-    if (serviceType) query.serviceType = serviceType;
+    // Build query step by step
+    let matchStage = {};
+    
+    // Add filters only if they exist
+    if (status) matchStage.status = status;
+    if (serviceCategory) matchStage.serviceCategory = new mongoose.Types.ObjectId(serviceCategory);
+    if (serviceScale) matchStage.serviceScale = serviceScale;
+    if (orderType) matchStage.orderType = orderType;
+    
+    // Date range
     if (dateFrom || dateTo) {
-      query.createdAt = {};
-      if (dateFrom) query.createdAt.$gte = new Date(dateFrom);
-      if (dateTo) query.createdAt.$lte = new Date(dateTo);
+      matchStage.createdAt = {};
+      if (dateFrom) matchStage.createdAt.$gte = new Date(dateFrom);
+      if (dateTo) matchStage.createdAt.$lte = new Date(dateTo);
+    }
+    
+    // Search
+    if (search) {
+      matchStage.$or = [
+        { 'details': { $regex: search, $options: 'i' } },
+        { 'pickupLocation': { $regex: search, $options: 'i' } },
+        { 'destinationLocation': { $regex: search, $options: 'i' } }
+      ];
     }
 
-    const orders = await Order.find(query)
-      .populate('customer', 'fullName email phone')
-      .populate('agent', 'user')
-      .populate('serviceCategory')
-      .sort({ createdAt: -1 })
-      .skip(skip)
-      .limit(parseInt(limit));
+    const aggregation = [
+      { $match: matchStage },
+      { $sort: { createdAt: -1 } },
+      { $skip: skip },
+      { $limit: parseInt(limit) },
+      // Populate customer
+      {
+        $lookup: {
+          from: 'users',
+          localField: 'customer',
+          foreignField: '_id',
+          as: 'customer'
+        }
+      },
+      { $unwind: { path: '$customer', preserveNullAndEmptyArrays: true } },
+      // Populate agent
+      {
+        $lookup: {
+          from: 'users',
+          localField: 'agent',
+          foreignField: '_id',
+          as: 'agent'
+        }
+      },
+      { $unwind: { path: '$agent', preserveNullAndEmptyArrays: true } },
+      // Populate service category
+      {
+        $lookup: {
+          from: 'servicecategories', // Make sure this matches your collection name
+          localField: 'serviceCategory',
+          foreignField: '_id',
+          as: 'serviceCategory'
+        }
+      },
+      { $unwind: { path: '$serviceCategory', preserveNullAndEmptyArrays: true } },
+      // Project only needed fields
+      {
+        $project: {
+          // Order fields
+          details: 1,
+          price: 1,
+          status: 1,
+          serviceScale: 1,
+          orderType: 1,
+          pickupLocation: 1,
+          destinationLocation: 1,
+          scheduledDate: 1,
+          scheduledTime: 1,
+          createdAt: 1,
+          updatedAt: 1,
+          // Customer fields
+          'customer._id': 1,
+          'customer.fullName': 1,
+          'customer.email': 1,
+          'customer.phone': 1,
+          'customer.location': 1,
+          // Agent fields
+          'agent._id': 1,
+          'agent.fullName': 1,
+          'agent.email': 1,
+          'agent.phone': 1,
+          // Service category fields
+          'serviceCategory._id': 1,
+          'serviceCategory.name': 1,
+          'serviceCategory.description': 1
+        }
+      }
+    ];
 
-    const total = await Order.countDocuments(query);
+    const [orders, total] = await Promise.all([
+      Order.aggregate(aggregation),
+      Order.countDocuments(matchStage)
+    ]);
 
     res.json({
       success: true,
@@ -418,14 +510,15 @@ export const getAllServiceRequests = async (req, res, next) => {
       pagination: {
         current: parseInt(page),
         pages: Math.ceil(total / limit),
-        total
+        total,
+        limit: parseInt(limit)
       }
     });
   } catch (err) {
+    console.error('Error fetching service requests:', err);
     next(err);
   }
 };
-
 // ==================== EMPLOYEE MANAGEMENT ====================
 
 // GET /api/admins/employees -> SUPER_ADMIN, ADMIN_HEAD
