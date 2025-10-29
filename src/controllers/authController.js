@@ -396,22 +396,23 @@ export const me = async (req, res, next) => {
       });
     }
 
+    // ✅ Return the user data directly, not nested in a 'user' object
     res.json({
       success: true,
-      user: {
-        id: user._id,
-        role: user.role,
-        name: user.fullName,
-        email: user.email,
-        phone: user.phone,
-        location: user.location,
-        dob: user.dob,
-        isVerified: user.isVerified,
-        profileImage: user.profileImage,
-        avatarUrl: user.avatarUrl,
-        status: user.status,
-        createdAt: user.createdAt
-      }
+      // Remove the nested 'user' object and return data directly
+      id: user._id,
+      role: user.role,
+      fullName: user.fullName,  // Changed from 'name' to 'fullName'
+      email: user.email,
+      phone: user.phone,
+      location: user.location,
+      dob: user.dob,
+      isVerified: user.isVerified,
+      profileImage: user.profileImage,
+      avatarUrl: user.avatarUrl,
+      status: user.status,
+      createdAt: user.createdAt,
+      updatedAt: user.updatedAt
     });
   } catch (e) {
     console.error('Get current user error:', e.message);
