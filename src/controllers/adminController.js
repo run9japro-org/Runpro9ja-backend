@@ -171,6 +171,20 @@ export const getCompanyAnalytics = async (req, res, next) => {
     const totalUsers = await User.countDocuments();
     const totalAgents = await AgentProfile.countDocuments();
     const totalOrders = await Order.countDocuments();
+    
+    // 🆕 ADDED: Completed and Pending orders counts
+    const completedOrders = await Order.countDocuments({ 
+      status: { 
+        $in: ['completed', 'accepted', 'agent_selected', 'quotation_accepted'] 
+      } 
+    });
+    
+    const pendingOrders = await Order.countDocuments({ 
+      status: { 
+        $in: ['pending', 'requested', 'pending_agent_response', 'quotation_provided', 'in-progress'] 
+      } 
+    });
+
     const totalRevenue = await Payment.aggregate([
       { $match: { status: 'success' } },
       { $group: { _id: null, total: { $sum: '$amount' } } }
@@ -180,6 +194,22 @@ export const getCompanyAnalytics = async (req, res, next) => {
     const newUsers = await User.countDocuments({ createdAt: { $gte: startDate } });
     const newAgents = await AgentProfile.countDocuments({ createdAt: { $gte: startDate } });
     const periodOrders = await Order.countDocuments({ createdAt: { $gte: startDate } });
+    
+    // 🆕 ADDED: Period-specific completed and pending orders
+    const periodCompletedOrders = await Order.countDocuments({ 
+      createdAt: { $gte: startDate },
+      status: { 
+        $in: ['completed', 'accepted', 'agent_selected', 'quotation_accepted'] 
+      } 
+    });
+    
+    const periodPendingOrders = await Order.countDocuments({ 
+      createdAt: { $gte: startDate },
+      status: { 
+        $in: ['pending', 'requested', 'pending_agent_response', 'quotation_provided', 'in-progress'] 
+      } 
+    });
+
     const periodRevenue = await Payment.aggregate([
       { $match: { status: 'success', createdAt: { $gte: startDate } } },
       { $group: { _id: null, total: { $sum: '$amount' } } }
@@ -213,7 +243,7 @@ export const getCompanyAnalytics = async (req, res, next) => {
       { $sort: { '_id.year': 1, '_id.week': 1 } }
     ]);
 
-    // NEW: Monthly data for current year
+    // Monthly data for current year
     const currentYear = new Date().getFullYear();
     const yearStart = new Date(currentYear, 0, 1);
     
@@ -232,7 +262,7 @@ export const getCompanyAnalytics = async (req, res, next) => {
       { $sort: { '_id.month': 1 } }
     ]);
 
-    // NEW: Weekly data for current month (day by day)
+    // Weekly data for current month (day by day)
     const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
     const dailyOrders = await Order.aggregate([
       { 
@@ -266,11 +296,15 @@ export const getCompanyAnalytics = async (req, res, next) => {
           newUsers,
           newAgents,
           orders: periodOrders,
-          revenue: periodRevenue[0]?.total || 0
+          revenue: periodRevenue[0]?.total || 0,
+          completedOrders: periodCompletedOrders, // 🆕 ADDED
+          pendingOrders: periodPendingOrders      // 🆕 ADDED
         },
+        // 🆕 ADDED: Main completed and pending counts for dashboard
+        completedOrders: completedOrders,
+        pendingOrders: pendingOrders,
         serviceBreakdown,
         weeklyServices,
-        // NEW: Chart-specific data
         monthlyData: monthlyOrders,
         dailyData: dailyOrders
       }
