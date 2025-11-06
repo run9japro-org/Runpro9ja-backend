@@ -11,8 +11,7 @@ const AgentProfileSchema = new mongoose.Schema({
   serviceType: { type: String },
   yearsOfExperience: { type: String },
   availability: { 
-    type: String, 
-    enum: ['available', 'unavailable', 'busy', 'offline'],
+    type: String,
     default: 'available' 
   },
   summary: { type: String },
