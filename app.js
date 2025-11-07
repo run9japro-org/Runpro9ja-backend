@@ -68,7 +68,6 @@ app.use(
 );
 
 app.use(morgan("dev"));
-app.use(express.static('public'));
 // ✅ Health check
 app.get("/", (req, res) =>
   res.json({ status: "ok", message: "Marketplace API v1" })
@@ -86,7 +85,6 @@ app.use("/api/orders", orderRoutes);
 app.use("/api/delivery", deliveryRoutes);
 app.use('/api/customers', customerRoutes); 
 // ✅ ADD THIS LINE - Serve static files from uploads directory
-app.use("/uploads", express.static(path.join(process.cwd(), "uploads")));
 // app.use("/api/profile", profileRoutes);
 app.use("/api/payments", paymentRoutes);
 app.use("/api/chat", chatRoutes);
@@ -97,6 +95,9 @@ app.use('/api/complaints', complaints);
 app.use('/api', searchRoutes);
 app.use('/api/support',supportRoutes);
 app.use('/api/admin/support', adminSupportRoutes);
+
+app.use("/uploads", express.static(path.join(process.cwd(), "uploads")));
+app.use(express.static('public'));
 // Add to your routes section:
 // app.use("/api/calls", callRoutes);
 // ✅ Error handlers
