@@ -4,8 +4,9 @@ import helmet from "helmet";
 import morgan from "morgan";
 import http from "http";
 import rateLimit from "express-rate-limit";
-import path from "path";
 
+import path from "path";
+import { fileURLToPath } from "url";
 import { env } from "./src/config/env.js";
 import { errorHandler, notFound } from "./src/middlewares/errorHandler.js";
 import { startCronJobs } from "./src/utils/cronJobs.js";
@@ -75,7 +76,12 @@ app.use(express.json({ limit: "10mb" }));
 app.use(express.urlencoded({ extended: true, limit: "10mb" }));
 
 // ✅ Static files
-app.use("/uploads", express.static(path.join(process.cwd(), "uploads")));
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
+app.use("/uploads", express.static(path.join(__dirname, "uploads")));
+
 app.use(express.static('public'));
 
 // ✅ Health check
