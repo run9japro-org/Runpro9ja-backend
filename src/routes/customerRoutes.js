@@ -29,7 +29,7 @@ const upload = multer({
 
 
 router.post('/upload-profile', authGuard, upload.single('profileImage'), uploadProfileImage);
-router.delete('/remove-profile-image', authGuard, removeProfileImage)
+router.delete('/remove-profile-image', authGuard, removeProfileImage);
 router.get('/me', authGuard,  getMyProfile);
 router.put('/me', authGuard,  updateMyProfile);
 router.get('/me/history', authGuard, getMyServiceHistory);
