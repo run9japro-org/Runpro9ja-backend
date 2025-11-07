@@ -11,19 +11,25 @@ const storage = multer.diskStorage({
 });
 
 export const customerUpload = multer({ storage });
-
 export const uploadCustomerProfileImage = async (req, res) => {
   try {
     if (!req.file) return res.status(400).json({ message: "No image uploaded" });
 
-    const profile = await User.findOneAndUpdate(
-      { user: req.user.id },
+    const profile = await User.findByIdAndUpdate(
+      req.user.id,
       { profileImage: `/uploads/${req.file.filename}` },
-      { new: true, upsert: true }
-    ).populate("user", "fullName email phone");
+      { new: true }
+    ).select("fullName email phone profileImage");
 
-    res.json({ message: "Customer profile image uploaded", profile });
+    return res.json({
+      message: "Customer profile image uploaded successfully",
+      profile,
+    });
   } catch (err) {
-    res.status(500).json({ message: "Upload failed", error: err.message });
+    return res.status(500).json({
+      message: "Upload failed",
+      error: err.message,
+    });
   }
 };
+
