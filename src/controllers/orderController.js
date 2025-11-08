@@ -1,6 +1,8 @@
 import Order from '../models/Order.js';
 import { notifyUser } from '../services/notificationService.js';
 import { AgentProfile } from '../models/AgentProfile.js';
+import {ROLES} from '../constants/roles.js'
+// Add this import at the top of the file
 // Step 1: Customer creates order with selected agent
 // In your orderController.js - UPDATED createOrder function
 export const createOrder = async (req, res) => {
