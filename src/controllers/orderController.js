@@ -696,7 +696,7 @@ export const getAgentOrders = async (req, res) => {
     
     const orders = await Order.find({ agent: req.user.id })
       .populate('serviceCategory', 'name description')
-      .populate('customer', 'fullName email phone')
+      .populate('customer', 'fullName email phone profileImage') // ✅ ADD profileImage here
       .populate('requestedAgent', 'fullName')
       .sort({ createdAt: -1 });
 
@@ -712,14 +712,15 @@ export const getAgentOrders = async (req, res) => {
       return order;
     });
 
-    // Debug: Log each order found
+    // Debug: Log each order found with customer image info
     ordersWithFixedStatus.forEach((order, index) => {
       console.log(`📦 Agent Order ${index + 1}:`, {
         orderId: order._id,
         agent: order.agent,
         status: order.status,
         serviceCategory: order.serviceCategory?.name,
-        customer: order.customer?.fullName
+        customer: order.customer?.fullName,
+        customerImage: order.customer?.profileImage // ✅ Log the image
       });
     });
     
