@@ -1,6 +1,6 @@
+// models/Chat.js
 import mongoose from "mongoose";
 
-// models/Chat.js - Add these fields to your existing schema
 const MessageSchema = new mongoose.Schema(
   {
     sender: { type: mongoose.Schema.Types.ObjectId, ref: "User", required: true },
@@ -8,6 +8,10 @@ const MessageSchema = new mongoose.Schema(
     message: { type: String, required: true },
     order: { type: mongoose.Schema.Types.ObjectId, ref: "Order" },
     read: { type: Boolean, default: false },
+    readBy: [{ 
+      user: { type: mongoose.Schema.Types.ObjectId, ref: "User" },
+      readAt: { type: Date, default: Date.now }
+    }],
     
     // Support-specific fields
     isSupportChat: { type: Boolean, default: false },
