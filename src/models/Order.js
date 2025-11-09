@@ -17,7 +17,8 @@ const statusSchema = new mongoose.Schema({
       'rejected', 
       'in-progress', 
       'completed', 
-      'cancelled'
+      'cancelled',
+      'public'
     ],
     required: true 
   },
