@@ -66,13 +66,15 @@ res.json(profile);
 } catch (e) { next(e); }
 };
 
-
 export const getAgentProfile = async (req, res, next) => {
-try {
-const profile = await AgentProfile.findOne({ user: req.params.userId }).populate('services');
-if (!profile) return res.status(404).json({ message: 'Profile not found' });
-res.json(profile);
-} catch (e) { next(e); }
+  try {
+    const profile = await AgentProfile.findOne({ user: req.params.userId })
+      .populate('services')
+      .populate('user', 'phone fullName email profileImage'); // ADD THIS LINE
+    
+    if (!profile) return res.status(404).json({ message: 'Profile not found' });
+    res.json(profile);
+  } catch (e) { next(e); }
 };
 
 

@@ -30,7 +30,7 @@ const upload = multer({
 router.get('/me', authGuard, getMyProfile);
 router.put('/me', authGuard, updateMyProfile);
 router.get('/me/history', authGuard, getMyServiceHistory);
-router.get("/:id", getCustomerProfile);
+router.get("/:id",authGuard, getCustomerProfile);
 
 // Image routes
 
