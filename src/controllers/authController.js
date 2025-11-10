@@ -849,3 +849,28 @@ export const getMyServiceHistory = async (req, res) => {
     });
   }
 };
+export const getCustomerProfile = async (req, res) => {
+  try {
+    const customer = await User.findById(req.params.id)
+      .select("fullName phone email profileImage");
+
+    if (!customer) {
+      return res.status(404).json({ message: "Customer not found" });
+    }
+
+    return res.json({
+      status: "success",
+      data: {
+        ...customer._doc,
+        profileImage: customer.profileImage
+          ? `${req.protocol}://${req.get("host")}${customer.profileImage}`
+          : null
+      }
+    });
+  } catch (err) {
+    return res.status(500).json({
+      message: "Failed to fetch customer profile",
+      error: err.message,
+    });
+  }
+};

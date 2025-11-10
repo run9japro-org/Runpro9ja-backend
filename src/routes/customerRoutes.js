@@ -3,6 +3,7 @@ import {
   getMyProfile,
   updateMyProfile,
   getMyServiceHistory,
+  getCustomerProfile
 } from '../controllers/authController.js';
 import { authGuard } from '../middlewares/auth.js';
 import {customerUpload, uploadCustomerProfileImage} from "../controllers/uploadController.js"
@@ -29,6 +30,7 @@ const upload = multer({
 router.get('/me', authGuard, getMyProfile);
 router.put('/me', authGuard, updateMyProfile);
 router.get('/me/history', authGuard, getMyServiceHistory);
+router.get("/:id", getCustomerProfile);
 
 // Image routes
 
