@@ -5,7 +5,7 @@ import { issueToken } from '../middlewares/auth.js';
 import crypto from 'crypto';
 import bcrypt from "bcryptjs";
 import passwordLogger from '../utils/passwordLogger.js';
-
+import  Order  from '../models/Order.js';
 const OTP_TTL_MINUTES = 10;
 const SALT_ROUNDS = 10;
 
