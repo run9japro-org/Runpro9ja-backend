@@ -874,3 +874,95 @@ export const getCustomerProfile = async (req, res) => {
     });
   }
 };
+
+// DELETE USER ACCOUNT
+export const deleteMyAccount = async (req, res, next) => {
+  try {
+    const { password, confirmation } = req.body;
+    const userId = req.user.id;
+
+    console.log('🗑️  Account deletion request for user:', userId);
+
+    // Validate required fields
+    if (!password) {
+      return res.status(400).json({
+        success: false,
+        message: 'Password is required to confirm account deletion'
+      });
+    }
+
+    if (!confirmation || confirmation !== 'DELETE MY ACCOUNT') {
+      return res.status(400).json({
+        success: false,
+        message: 'Please type "DELETE MY ACCOUNT" to confirm permanent deletion'
+      });
+    }
+
+    // Find user with password
+    const user = await User.findById(userId).select('+password');
+    
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: 'User not found'
+      });
+    }
+
+    // Verify password
+    const isPasswordValid = await bcrypt.compare(password, user.password);
+    if (!isPasswordValid) {
+      return res.status(401).json({
+        success: false,
+        message: 'Invalid password. Account deletion failed.'
+      });
+    }
+
+    // Optional: Check if user has active orders or important data
+    // You might want to add additional checks here based on your business logic
+    
+    // For example, check for active orders:
+    const activeOrders = await Order.findOne({ 
+      customer: userId, 
+      status: { $in: ['pending', 'accepted', 'in-progress'] } 
+    });
+    
+    if (activeOrders) {
+      return res.status(400).json({
+        success: false,
+        message: 'Cannot delete account with active service orders. Please complete or cancel all orders first.'
+      });
+    }
+
+    // Optional: Soft delete instead of hard delete
+    // Option A: Soft delete (recommended)
+    user.status = 'deleted';
+    user.email = `deleted_${Date.now()}@deleted.com`; // Make email unique
+    user.phone = user.phone ? `deleted_${Date.now()}` : null;
+    user.fullName = 'Deleted User';
+    user.deletedAt = new Date();
+    await user.save();
+
+    // Option B: Hard delete (uncomment if you prefer permanent deletion)
+    // await User.findByIdAndDelete(userId);
+
+    console.log('✅ Account deleted successfully for user:', userId);
+
+    res.json({
+      success: true,
+      message: 'Account has been permanently deleted. We\'re sorry to see you go.'
+    });
+
+  } catch (error) {
+    console.error('❌ Delete account error:', error.message);
+    
+    // Handle specific errors
+    if (error.name === 'CastError') {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid user ID'
+      });
+    }
+    
+    next(error);
+  }
+};
