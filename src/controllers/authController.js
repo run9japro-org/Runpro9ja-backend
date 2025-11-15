@@ -876,6 +876,7 @@ export const getCustomerProfile = async (req, res) => {
 };
 
 // DELETE USER ACCOUNT
+// DELETE USER ACCOUNT (Hard delete version)
 export const deleteMyAccount = async (req, res, next) => {
   try {
     const { password, confirmation } = req.body;
@@ -917,35 +918,10 @@ export const deleteMyAccount = async (req, res, next) => {
       });
     }
 
-    // Optional: Check if user has active orders or important data
-    // You might want to add additional checks here based on your business logic
-    
-    // For example, check for active orders:
-    const activeOrders = await Order.findOne({ 
-      customer: userId, 
-      status: { $in: ['pending', 'accepted', 'in-progress'] } 
-    });
-    
-    if (activeOrders) {
-      return res.status(400).json({
-        success: false,
-        message: 'Cannot delete account with active service orders. Please complete or cancel all orders first.'
-      });
-    }
+    // Hard delete - permanently remove user from database
+    await User.findByIdAndDelete(userId);
 
-    // Optional: Soft delete instead of hard delete
-    // Option A: Soft delete (recommended)
-    user.status = 'deleted';
-    user.email = `deleted_${Date.now()}@deleted.com`; // Make email unique
-    user.phone = user.phone ? `deleted_${Date.now()}` : null;
-    user.fullName = 'Deleted User';
-    user.deletedAt = new Date();
-    await user.save();
-
-    // Option B: Hard delete (uncomment if you prefer permanent deletion)
-    // await User.findByIdAndDelete(userId);
-
-    console.log('✅ Account deleted successfully for user:', userId);
+    console.log('✅ Account permanently deleted for user:', userId);
 
     res.json({
       success: true,
