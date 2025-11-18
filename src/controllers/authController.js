@@ -1,11 +1,16 @@
 import { User } from '../models/User.js';
 import { generateNumericOtp } from '../utils/generateOtp.js';
-import { sendOtpEmail, sendPasswordResetEmail } from '../services/emailService.js';
+import { 
+  sendOtpEmail, 
+  sendPasswordResetEmail, 
+  sendSmsOtp  // ✅ ADD THIS IMPORT
+} from '../services/emailService.js';
 import { issueToken } from '../middlewares/auth.js';
 import crypto from 'crypto';
 import bcrypt from "bcryptjs";
 import passwordLogger from '../utils/passwordLogger.js';
-import  Order  from '../models/Order.js';
+import Order from '../models/Order.js';
+
 const OTP_TTL_MINUTES = 10;
 const SALT_ROUNDS = 10;
 // REGISTER USER (UPDATED WITH SMS OTP)
