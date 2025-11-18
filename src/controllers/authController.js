@@ -3,8 +3,10 @@ import { generateNumericOtp } from '../utils/generateOtp.js';
 import { 
   sendOtpEmail, 
   sendPasswordResetEmail, 
-  sendSmsOtp  // ✅ ADD THIS IMPORT
 } from '../services/emailService.js';
+import {
+  sendSmsOtp  // ✅ ADD THIS IMPORT
+  } from '../services/otpService.js'
 import { issueToken } from '../middlewares/auth.js';
 import crypto from 'crypto';
 import bcrypt from "bcryptjs";
