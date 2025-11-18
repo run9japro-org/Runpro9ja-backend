@@ -28,7 +28,7 @@ import customerRoutes from './src/routes/customerRoutes.js';
 import supportRoutes from './src/routes/supportRoutes.js';
 import adminSupportRoutes from './src/routes/adminSupportRoutes.js';
 import complaints from "./src/routes/complaintRoutes.js";
-
+import qoreidRoutes from "./src/routes/qoreidRoutes.js";
 // ✅ Socket.io
 import { initSocket } from "./src/socket.js";
 
@@ -108,7 +108,7 @@ app.use('/api/complaints', complaints);
 app.use('/api', searchRoutes);
 app.use('/api/support', supportRoutes);
 app.use('/api/admin/support', adminSupportRoutes);
-
+app.use("/api/qoreid", qoreidRoutes);
 // ✅ Error handlers (MUST be last)
 app.use(notFound);
 app.use(errorHandler);

@@ -1,0 +1,11 @@
+{
+  "version": "1.0",
+  "apis": [
+    {
+      "identifier": "qoreid",
+      "source": "@qoreid/v1.0#79ra32ll9x7kn58",
+      "integrity": "sha512-dD69gh0Xl9xLcGt4Yl3BMeFrQd5LQG88y92SiwrdtLmEdQ+F+PTYVfeKB0pEXeyOjsCSzbCUMX5dfqFV8R6PKw==",
+      "installerVersion": "6.1.3"
+    }
+  ]
+}
