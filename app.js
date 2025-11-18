@@ -31,6 +31,10 @@ import complaints from "./src/routes/complaintRoutes.js";
 import qoreidRoutes from "./src/routes/qoreidRoutes.js";
 // ✅ Socket.io
 import { initSocket } from "./src/socket.js";
+import mongoSanitize from "express-mongo-sanitize";
+import xss from "xss-clean";
+import hpp from "hpp";
+
 
 const app = express();
 const server = http.createServer(app);
@@ -51,7 +55,9 @@ app.use(
     legacyHeaders: false,
   })
 );
-
+app.use(mongoSanitize());
+app.use(xss());
+app.use(hpp());
 // ✅ CRITICAL: Webhook route MUST come BEFORE express.json()
 app.post("/api/payments/webhook", express.raw({ type: "application/json" }), handleWebhook);
 
