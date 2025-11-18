@@ -21,6 +21,10 @@ export const env = {
     authToken: process.env.TWILIO_AUTH_TOKEN,
     phoneNumber: process.env.TWILIO_PHONE_NUMBER
   },
+  termii: {
+    apiKey: process.env.TERMII_API_KEY,
+    senderId: process.env.TERMII_SENDER_ID,
+  },
   resend: {
     apiKey: process.env.RESEND_API_KEY,
     from: process.env.RESEND_FROM || 'no-reply@yourdomain.com',

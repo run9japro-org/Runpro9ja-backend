@@ -8,8 +8,7 @@ import passwordLogger from '../utils/passwordLogger.js';
 import  Order  from '../models/Order.js';
 const OTP_TTL_MINUTES = 10;
 const SALT_ROUNDS = 10;
-
-// REGISTER USER
+// REGISTER USER (UPDATED WITH SMS OTP)
 export const register = async (req, res, next) => {
   try {
     const { role, fullName, email, location, dob, password, phone } = req.body;
@@ -31,6 +30,17 @@ export const register = async (req, res, next) => {
         success: false,
         message: "Please provide a valid email address"
       });
+    }
+
+    // Validate phone format if provided
+    if (phone) {
+      const phoneRegex = /^\+?[\d\s-()]{10,}$/;
+      if (!phoneRegex.test(phone)) {
+        return res.status(400).json({
+          success: false,
+          message: "Please provide a valid phone number"
+        });
+      }
     }
 
     // Validate date of birth (must be at least 18 years old)
@@ -78,12 +88,37 @@ export const register = async (req, res, next) => {
     const user = await User.create(userData);
 
     try {
-      const otpResult = await setOtpForUser(user);
+      // ✅ UPDATED: Send OTP via both email and SMS (if phone provided)
+      const channels = ['email'];
+      if (phone) {
+        channels.push('sms');
+      }
+      
+      const otpResult = await setOtpForUser(user, channels);
+      
+      // Determine success message based on what worked
+      const emailSuccess = otpResult.email.success;
+      const smsSuccess = phone ? otpResult.sms.success : false;
+      
+      let message = 'Registered successfully. ';
+      if (emailSuccess && smsSuccess) {
+        message += 'OTP sent to your email and phone.';
+      } else if (emailSuccess) {
+        message += 'OTP sent to your email.';
+      } else if (smsSuccess) {
+        message += 'OTP sent to your phone.';
+      } else {
+        message += 'OTP delivery failed. Please try resending.';
+      }
+
       res.status(201).json({
         success: true,
-        message: 'Registered successfully. OTP sent to your email.',
+        message: message,
         userId: user._id,
-        otpDelivery: { email: otpResult.email.success }
+        otpDelivery: {
+          email: otpResult.email.success,
+          sms: phone ? otpResult.sms.success : false
+        }
       });
     } catch (otpError) {
       console.error('OTP delivery failed:', otpError.message);
@@ -277,10 +312,10 @@ export const login = async (req, res, next) => {
   }
 };
 
-// RESEND OTP (Email only)
+// RESEND OTP (UPDATED - Email & SMS)
 export const resendOtp = async (req, res, next) => {
   try {
-    const { userId, email } = req.body;
+    const { userId, email, channels = ['email', 'sms'] } = req.body;
     
     let user;
     if (userId) {
@@ -301,13 +336,30 @@ export const resendOtp = async (req, res, next) => {
       });
     }
 
-    const otpResult = await setOtpForUser(user);
+    const otpResult = await setOtpForUser(user, channels);
+    
+    // Build appropriate message
+    const emailSuccess = otpResult.email.success;
+    const smsSuccess = otpResult.sms.success;
+    
+    let message = '';
+    if (emailSuccess && smsSuccess) {
+      message = 'OTP re-sent to your email and phone.';
+    } else if (emailSuccess) {
+      message = 'OTP re-sent to your email.';
+    } else if (smsSuccess) {
+      message = 'OTP re-sent to your phone.';
+    } else {
+      message = 'OTP delivery failed. Please try again.';
+    }
+
     res.json({
-      success: otpResult.email.success,
-      message: otpResult.email.success
-        ? 'OTP re-sent to your email.'
-        : 'OTP delivery failed. Please try again.',
-      otpDelivery: { email: otpResult.email.success }
+      success: emailSuccess || smsSuccess,
+      message: message,
+      otpDelivery: {
+        email: otpResult.email.success,
+        sms: otpResult.sms.success
+      }
     });
   } catch (e) {
     console.error('Resend OTP error:', e.message);
@@ -802,33 +854,54 @@ export const changePassword = async (req, res, next) => {
   }
 };
 
-// OTP HELPER FUNCTION
-const setOtpForUser = async (user) => {
+// OTP HELPER FUNCTION (UPDATED FOR SMS SUPPORT)
+const setOtpForUser = async (user, channels = ['email']) => {
   try {
     const code = generateNumericOtp(6);
     user.otpCode = code;
     user.otpExpiresAt = new Date(Date.now() + OTP_TTL_MINUTES * 60 * 1000);
     await user.save();
 
-    // Send OTP through email
-    const emailResult = await sendOtpEmail({
-      to: user.email,
-      name: user.fullName,
-      code: code
-    });
-
-    return { 
-      email: {
-        success: emailResult.success,
-        message: emailResult.success ? 'OTP sent successfully' : 'Failed to send OTP'
-      } 
+    const results = {
+      email: { success: false, message: 'Not attempted' },
+      sms: { success: false, message: 'Not attempted' }
     };
+
+    // Send OTP through email if requested and user has email
+    if (channels.includes('email') && user.email) {
+      try {
+        const emailResult = await sendOtpEmail({
+          to: user.email,
+          name: user.fullName,
+          code: code
+        });
+        results.email = emailResult;
+      } catch (emailError) {
+        console.error('Email OTP failed:', emailError.message);
+        results.email = { success: false, error: emailError.message };
+      }
+    }
+
+    // Send OTP through SMS if requested and user has phone
+    if (channels.includes('sms') && user.phone) {
+      try {
+        const smsResult = await sendSmsOtp({
+          to: user.phone,
+          code: code
+        });
+        results.sms = smsResult;
+      } catch (smsError) {
+        console.error('SMS OTP failed:', smsError.message);
+        results.sms = { success: false, error: smsError.message };
+      }
+    }
+
+    return results;
   } catch (error) {
     console.error('Error in setOtpForUser:', error.message);
     throw error;
   }
 };
-
 export const getMyServiceHistory = async (req, res) => {
   try {
     const orders = await Order.find({ customer: req.user.id })
