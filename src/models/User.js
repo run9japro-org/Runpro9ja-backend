@@ -24,9 +24,7 @@ const UserSchema = new mongoose.Schema(
     },
     dob: { 
       type: Date, 
-      required: function() {
-        return this.role === ROLES.AGENT || this.role === ROLES.CUSTOMER;
-      },
+      
       // validate: {
       //   validator: function(dob) {
       //     const age = Math.floor((new Date() - new Date(dob)) / (365.25 * 24 * 60 * 60 * 1000));

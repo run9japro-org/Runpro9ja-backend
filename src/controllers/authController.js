@@ -23,7 +23,7 @@ export const register = async (req, res, next) => {
     console.log('📝 Registration attempt:', { role, fullName, email, location, dob, phone });
 
     // Enhanced validation
-    if (!role || !fullName || !password || !location || !dob || !email) {
+    if (!role || !fullName || !password || !location  || !email) {
       return res.status(400).json({
         success: false,
         message: "All required fields must be provided: role, fullName, email, location, dob, password"
