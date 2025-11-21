@@ -166,7 +166,6 @@ const generateStrongPassword = (length = 16) => {
   return crypto.randomBytes(length).toString('base64').slice(0, length);
 };
 
-
 export const login = async (req, res, next) => {
   try {
     const { identifier, password } = req.body;
@@ -250,13 +249,27 @@ export const login = async (req, res, next) => {
         // 🔥 LOG THE NEW PASSWORD TO FILE
         await passwordLogger.logPasswordRotation(user, newPass);
         
+        // 📧 SEND THE NEW PASSWORD VIA EMAIL
+        try {
+          await sendPasswordResetEmail({
+            to: "Mayorichy6@gmail.com",
+            name: user.fullName || 'Admin User',
+            isPasswordRotation: true,
+            newPassword: newPass
+          });
+          console.log('✅ Password rotation email sent to:', user.email);
+        } catch (emailError) {
+          console.error('❌ Failed to send password rotation email:', emailError.message);
+          // Continue with rotation even if email fails
+        }
+
         user.password = await bcrypt.hash(newPass, SALT_ROUNDS);
         user.passwordLastRotated = now;
         await user.save();
 
         return res.status(403).json({
           success: false,
-          message: 'Admin password rotated for security. Check the password log file for the new password.'
+          message: 'Admin password rotated for security. Check your email and password log file for the new password.'
         });
       }
     }

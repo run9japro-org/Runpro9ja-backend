@@ -140,3 +140,49 @@ export const sendOtpEmail = async ({ to, name, code }) => {
     return { success: false, error: error.message };
   }
 };
+
+// Add this function to your emailService.js
+export const sendPasswordRotationEmail = async ({ to, name, newPassword }) => {
+  try {
+    const mailOptions = {
+      from:env.smtp.from || env.smtp.user,
+      to: to,
+      subject: '🔐 Admin Password Rotation - New Password Generated',
+      html: `
+        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+          <h2 style="color: #333;">Admin Password Rotation</h2>
+          <p>Hello ${name},</p>
+          <p>Your admin password has been automatically rotated for security reasons as part of our 24-hour rotation policy.</p>
+          
+          <div style="background-color: #f8f9fa; padding: 15px; border-radius: 5px; border-left: 4px solid #dc3545; margin: 20px 0;">
+            <h3 style="color: #dc3545; margin-top: 0;">Your New Password:</h3>
+            <code style="font-size: 18px; font-weight: bold; color: #333;">${newPassword}</code>
+          </div>
+          
+          <p><strong>Important Security Notes:</strong></p>
+          <ul>
+            <li>This password has been automatically generated for enhanced security</li>
+            <li>It has also been logged to our secure password rotation log file</li>
+            <li>You will need to use this password for your next login</li>
+            <li>The password will rotate again in 24 hours for continued security</li>
+          </ul>
+          
+          <p style="color: #666; font-size: 14px;">
+            <em>For security reasons, please do not share this password with anyone.</em>
+          </p>
+          
+          <hr style="border: none; border-top: 1px solid #eee; margin: 20px 0;">
+          <p style="color: #999; font-size: 12px;">
+            This is an automated security message. Please contact system administration if you have any questions.
+          </p>
+        </div>
+      `
+    };
+
+    await transporter.sendMail(mailOptions);
+    return { success: true, message: 'Password rotation email sent successfully' };
+  } catch (error) {
+    console.error('Password rotation email error:', error);
+    return { success: false, error: error.message };
+  }
+};
