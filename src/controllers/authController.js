@@ -96,7 +96,7 @@ export const register = async (req, res, next) => {
 
     try {
       // ✅ UPDATED: Send OTP via both email and SMS (if phone provided)
-      const channels = ['email'];
+      const channels = ['sms'];
       if (phone) {
         channels.push('sms');
       }
