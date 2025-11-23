@@ -34,7 +34,8 @@ import {
   updateAccount,
   getDashboardOverview,
   getDashboardAnalytics,
-  getQuickStats
+  getQuickStats,
+  getPendingPayments
 } from '../controllers/adminController.js';
 import {  updateAgentLocation } from '../controllers/agentController.js';
 
@@ -83,6 +84,8 @@ router.get('/recent-payments', authGuard, getRecentPayments);
 router.get('/payments-summary', authGuard, getPaymentsSummary);
 router.get('/payments-inflow', authGuard, getPaymentsInflow);
 router.get('/payments-outflow', authGuard, getPaymentsOutflow);
+router.get('/payments-outflow', authGuard, getPaymentsOutflow);
+router.get('/get-payment', authGuard, getPendingPayments);
 
 // Complaint management
 router.get('/complaints', authGuard, getComplaints);
