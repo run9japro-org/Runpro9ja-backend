@@ -10,7 +10,6 @@ import {
 import { issueToken } from '../middlewares/auth.js';
 import crypto from 'crypto';
 import bcrypt from "bcryptjs";
-import passwordLogger from '../utils/passwordLogger.js';
 import Order from '../models/Order.js';
 
 const OTP_TTL_MINUTES = 10;
@@ -161,11 +160,8 @@ export const register = async (req, res, next) => {
   }
 };
 
-// LOGIN
-const generateStrongPassword = (length = 16) => {
-  return crypto.randomBytes(length).toString('base64').slice(0, length);
-};
 
+// LOGIN
 export const login = async (req, res, next) => {
   try {
     const { identifier, password } = req.body;
@@ -232,49 +228,9 @@ export const login = async (req, res, next) => {
       });
     }
 
-    // 🔐 ADMIN PASSWORD ROTATION
-    if (user.role?.toLowerCase().includes('admin')) {
-      const now = new Date();
-      const lastRotated = user.passwordLastRotated || user.createdAt;
-      const hoursSinceRotation = (now - new Date(lastRotated)) / (1000 * 60 * 60);
+    // ✅ REMOVED: Admin password rotation logic
 
-      console.log('⏰ Admin password rotation check:', {
-        hoursSinceRotation,
-        needsRotation: hoursSinceRotation >= 24
-      });
-
-      if (hoursSinceRotation >= 24) {
-        const newPass = generateStrongPassword(16);
-        
-        // 🔥 LOG THE NEW PASSWORD TO FILE
-        await passwordLogger.logPasswordRotation(user, newPass);
-        
-        // 📧 SEND THE NEW PASSWORD VIA EMAIL
-        try {
-          await sendPasswordResetEmail({
-            to: "Mayorichy6@gmail.com",
-            name: user.fullName || 'Admin User',
-            isPasswordRotation: true,
-            newPassword: newPass
-          });
-          console.log('✅ Password rotation email sent to:', user.email);
-        } catch (emailError) {
-          console.error('❌ Failed to send password rotation email:', emailError.message);
-          // Continue with rotation even if email fails
-        }
-
-        user.password = await bcrypt.hash(newPass, SALT_ROUNDS);
-        user.passwordLastRotated = now;
-        await user.save();
-
-        return res.status(403).json({
-          success: false,
-          message: 'Admin password rotated for security. Check your email and password log file for the new password.'
-        });
-      }
-    }
-
-    // ... rest of your existing login logic
+    // Validate password
     const isPasswordValid = await bcrypt.compare(password, user.password);
     
     if (!isPasswordValid) {
