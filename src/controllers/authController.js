@@ -843,20 +843,6 @@ const setOtpForUser = async (user, channels = ['email']) => {
       sms: { success: false, message: 'Not attempted' }
     };
 
-    // Send OTP through email if requested and user has email
-    if (channels.includes('email') && user.email) {
-      try {
-        const emailResult = await sendOtpEmail({
-          to: user.email,
-          name: user.fullName,
-          code: code
-        });
-        results.email = emailResult;
-      } catch (emailError) {
-        console.error('Email OTP failed:', emailError.message);
-        results.email = { success: false, error: emailError.message };
-      }
-    }
 
     // Send OTP through SMS if requested and user has phone
     if (channels.includes('sms') && user.phone) {
