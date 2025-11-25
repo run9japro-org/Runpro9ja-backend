@@ -839,7 +839,6 @@ const setOtpForUser = async (user, channels = ['email']) => {
     await user.save();
 
     const results = {
-      email: { success: false, message: 'Not attempted' },
       sms: { success: false, message: 'Not attempted' }
     };
 
