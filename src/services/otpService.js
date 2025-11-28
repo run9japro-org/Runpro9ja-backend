@@ -157,12 +157,7 @@ export const sendSmsOtp = async ({ to, code }) => {
   
   return result;
 };
-// ===== SEND SMS OTP (USING TERMII) =====
-export const sendSmsOtp = async ({ to, code }) => {
-  if (!to) return { success: false, service: "sms", error: "Phone number missing" };
 
-  return await termiiService.sendOtp({ to, code });
-};
 
 // ===== SEND BOTH CHANNELS =====
 export const sendOtpBothChannels = async ({ to, name, code, phone }) => {
