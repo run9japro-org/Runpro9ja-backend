@@ -3,36 +3,6 @@ import { env } from "../config/env.js";
 
 let transporter;
 
-// ===== EMAIL SETUP =====
-try {
-  console.log("🔧 Setting up Gmail transporter...");
-
-  if (!env.smtp.user || !env.smtp.pass) {
-    throw new Error("Missing Gmail credentials in .env");
-  }
-
-  transporter = nodemailer.createTransport({
-    host: "smtp.gmail.com",
-    port: 587,
-    secure: false,
-    auth: {
-      user: env.smtp.user,
-      pass: env.smtp.pass,
-    },
-    requireTLS: true,
-    logger: true,
-    debug: true,
-    connectionTimeout: 60000,
-    greetingTimeout: 30000,
-    socketTimeout: 60000,
-  });
-
-  await transporter.verify();
-  console.log("✅ Gmail transporter ready!");
-} catch (err) {
-  console.error("❌ Email setup failed:", err.message);
-}
-
 // ===== TERMII SMS SETUP =====
 class TermiiService {
   constructor() {
@@ -70,20 +40,21 @@ class TermiiService {
 
       const data = await response.json();
 
-      if (data.message === "Successfully sent") {
-        console.log(`✅ SMS sent to ${to}: ${data.messageId}`);
+      // Fix: Check the actual response structure from Termii
+      if (data.message === "Successfully Sent" || data.message === "Successfully sent") {
+        console.log(`✅ SMS sent to ${to}: ${data.message_id || data.messageId}`);
         return { 
           success: true, 
           service: "sms", 
-          messageId: data.messageId,
+          messageId: data.message_id || data.messageId,
           data 
         };
       } else {
-        console.error("❌ Termii API error:", data.message);
+        console.error("❌ Termii API error:", data.message || JSON.stringify(data));
         return { 
           success: false, 
           service: "sms", 
-          error: data.message 
+          error: data.message || "Unknown error" 
         };
       }
     } catch (error) {
@@ -126,23 +97,35 @@ class TermiiService {
 
       const data = await otpResponse.json();
 
-      if (data.status === "success") {
-        console.log(`✅ OTP sent to ${to}: ${data.pinId}`);
+      console.log("📨 Termii OTP Response:", JSON.stringify(data, null, 2));
+
+      // Fix: Handle different possible response structures from Termii
+      if (data.status === "success" || data.code === "ok") {
+        console.log(`✅ OTP sent to ${to}: ${data.pinId || data.pin_id}`);
         return { 
           success: true, 
           service: "sms", 
-          pinId: data.pinId,
+          pinId: data.pinId || data.pin_id,
           data 
         };
       } else {
-        console.error("❌ Termii OTP error:", data.message);
-        // Fallback to regular SMS
-        return this.sendSMS({ to, message: `Your verification code is ${code}` });
+        const errorMsg = data.message || data.error || "Unknown Termii error";
+        console.error("❌ Termii OTP error:", errorMsg);
+        
+        // Fallback to regular SMS with better error handling
+        console.log("🔄 Falling back to regular SMS...");
+        return this.sendSMS({ 
+          to, 
+          message: `Your RunPro9ja verification code is: ${code}. Valid for 10 minutes.` 
+        });
       }
     } catch (error) {
       console.error("❌ Failed to send OTP via Termii:", error.message);
       // Fallback to regular SMS
-      return this.sendSMS({ to, message: `Your verification code is ${code}` });
+      return this.sendSMS({ 
+        to, 
+        message: `Your RunPro9ja verification code is: ${code}. Valid for 10 minutes.` 
+      });
     }
   }
 }
@@ -150,42 +133,30 @@ class TermiiService {
 // Initialize Termii service
 const termiiService = new TermiiService();
 
-// ===== SEND EMAIL OTP =====
-export const sendEmailOtp = async ({ to, name, code }) => {
-  if (!transporter) {
-    console.error("❌ Email transporter not initialized");
-    return { success: false, service: "email", error: "Email not configured" };
+// ===== SEND SMS OTP (USING TERMII) =====
+export const sendSmsOtp = async ({ to, code }) => {
+  if (!to) {
+    console.error("❌ Phone number missing for SMS OTP");
+    return { 
+      success: false, 
+      service: "sms", 
+      error: "Phone number missing" 
+    };
   }
 
-  const message = `
-Hi ${name || "User"},
-
-Your RunPro9ja verification code is: ${code}
-
-This code will expire in 10 minutes.
-
-If you didn't request this code, please ignore this email.
-
-Best regards,
-RunPro9ja Team
-  `;
-
-  try {
-    const info = await transporter.sendMail({
-      from: `"RunPro9ja" <${env.smtp.user}>`,
-      to,
-      subject: "Your RunPro9ja Verification Code",
-      text: message,
-    });
-
-    console.log(`✅ Email sent to ${to}: ${info.response}`);
-    return { success: true, service: "email", messageId: info.messageId };
-  } catch (error) {
-    console.error("❌ Failed to send email:", error.message);
-    return { success: false, service: "email", error: error.message };
-  }
+  console.log(`📱 Attempting to send SMS OTP to: ${to}`);
+  const result = await termiiService.sendOtp({ to, code });
+  
+  // Log the complete result for debugging
+  console.log(`📋 SMS OTP Result for ${to}:`, {
+    success: result.success,
+    service: result.service,
+    pinId: result.pinId,
+    error: result.error
+  });
+  
+  return result;
 };
-
 // ===== SEND SMS OTP (USING TERMII) =====
 export const sendSmsOtp = async ({ to, code }) => {
   if (!to) return { success: false, service: "sms", error: "Phone number missing" };
