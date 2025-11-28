@@ -52,11 +52,12 @@ export const register = async (req, res, next) => {
     // Validate date of birth (must be at least 18 years old)
     const birthDate = new Date(dob);
     const today = new Date();
-    const age = today.getFullYear() - birthDate.getFullYear();
+     // Calculate age correctly without reassigning const
+    let age = today.getFullYear() - birthDate.getFullYear();
     const monthDiff = today.getMonth() - birthDate.getMonth();
     
     if (monthDiff < 0 || (monthDiff === 0 && today.getDate() < birthDate.getDate())) {
-      age--;
+      age = age - 1; // ✅ Use new assignment instead of decrement operator
     }
 
     if (age < 18) {
